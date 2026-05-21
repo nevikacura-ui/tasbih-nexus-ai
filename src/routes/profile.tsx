@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { MobileShell } from "@/components/MobileShell";
 import { NoorBackdrop } from "@/components/NoorBackdrop";
-import { Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight } from "lucide-react";
+import { Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight, LogIn, LogOut, Lock } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({

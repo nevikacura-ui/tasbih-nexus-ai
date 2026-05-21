@@ -13,9 +13,13 @@ import { Route as SpiritualRouteImport } from './routes/spiritual'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ReflectRouteImport } from './routes/reflect'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as CommunitiesRouteImport } from './routes/communities'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as AuthenticatedJoinRouteImport } from './routes/_authenticated.join'
 
 const SpiritualRoute = SpiritualRouteImport.update({
   id: '/spiritual',
@@ -37,6 +41,11 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EventsRoute = EventsRouteImport.update({
   id: '/events',
   path: '/events',
@@ -47,39 +56,63 @@ const CommunitiesRoute = CommunitiesRouteImport.update({
   path: '/communities',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const InviteCodeRoute = InviteCodeRouteImport.update({
+  id: '/invite/$code',
+  path: '/invite/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedJoinRoute = AuthenticatedJoinRouteImport.update({
+  id: '/join',
+  path: '/join',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
+  '/join': typeof AuthenticatedJoinRoute
+  '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
+  '/join': typeof AuthenticatedJoinRoute
+  '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
+  '/_authenticated/join': typeof AuthenticatedJoinRoute
+  '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,38 +120,51 @@ export interface FileRouteTypes {
     | '/'
     | '/communities'
     | '/events'
+    | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
     | '/spiritual'
+    | '/join'
+    | '/invite/$code'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/communities'
     | '/events'
+    | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
     | '/spiritual'
+    | '/join'
+    | '/invite/$code'
   id:
     | '__root__'
     | '/'
+    | '/_authenticated'
     | '/communities'
     | '/events'
+    | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
     | '/spiritual'
+    | '/_authenticated/join'
+    | '/invite/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   CommunitiesRoute: typeof CommunitiesRoute
   EventsRoute: typeof EventsRoute
+  LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   ReflectRoute: typeof ReflectRoute
   RemindersRoute: typeof RemindersRoute
   SpiritualRoute: typeof SpiritualRoute
+  InviteCodeRoute: typeof InviteCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -151,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/events': {
       id: '/events'
       path: '/events'
@@ -165,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CommunitiesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -172,17 +232,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/$code': {
+      id: '/invite/$code'
+      path: '/invite/$code'
+      fullPath: '/invite/$code'
+      preLoaderRoute: typeof InviteCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/join': {
+      id: '/_authenticated/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof AuthenticatedJoinRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
   }
 }
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedJoinRoute: typeof AuthenticatedJoinRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedJoinRoute: AuthenticatedJoinRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   CommunitiesRoute: CommunitiesRoute,
   EventsRoute: EventsRoute,
+  LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   ReflectRoute: ReflectRoute,
   RemindersRoute: RemindersRoute,
   SpiritualRoute: SpiritualRoute,
+  InviteCodeRoute: InviteCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
