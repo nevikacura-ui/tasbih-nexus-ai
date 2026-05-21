@@ -3,7 +3,7 @@ import { MobileShell } from "@/components/MobileShell";
 import { NoorBackdrop } from "@/components/NoorBackdrop";
 import {
   Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight,
-  LogIn, LogOut, ShieldCheck, Flag, Crown,
+  LogIn, LogOut, ShieldCheck, Flag, Crown, Clock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -91,6 +91,9 @@ function ProfilePage() {
           <RowLink to="/reminders" icon={Bell} title="Reminders & Noor Nudges" sub="Customize prayers, daily nudges, quiet hours" />
           <RowLink to="/guidelines" icon={ShieldCheck} title="Community Guidelines" sub="How we keep this circle calm and safe" />
           <RowLink to="/report" search={{ type: "user" as const, id: "" }} icon={Flag} title="Report something" sub="Confidential · reviewed by moderators" />
+          {user && (
+            <RowLink to="/reports" icon={Clock} title="My reports" sub="Track status: received, reviewing, actioned" />
+          )}
           {user && (
             <>
               <RowLink to="/moderation" icon={ShieldCheck} title="Moderation queue" sub="For moderators and admins" />
