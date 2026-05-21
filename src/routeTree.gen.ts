@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpiritualRouteImport } from './routes/spiritual'
+import { Route as ReportRouteImport } from './routes/report'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ReflectRouteImport } from './routes/reflect'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -25,6 +26,11 @@ import { Route as AuthenticatedJoinRouteImport } from './routes/_authenticated.j
 const SpiritualRoute = SpiritualRouteImport.update({
   id: '/spiritual',
   path: '/spiritual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportRoute = ReportRouteImport.update({
+  id: '/report',
+  path: '/report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RemindersRoute = RemindersRouteImport.update({
@@ -91,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
   '/invite/$code': typeof InviteCodeRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
   '/invite/$code': typeof InviteCodeRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/_authenticated/join': typeof AuthenticatedJoinRoute
   '/invite/$code': typeof InviteCodeRoute
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/join'
     | '/invite/$code'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/join'
     | '/invite/$code'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/_authenticated/join'
     | '/invite/$code'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   ReflectRoute: typeof ReflectRoute
   RemindersRoute: typeof RemindersRoute
+  ReportRoute: typeof ReportRoute
   SpiritualRoute: typeof SpiritualRoute
   InviteCodeRoute: typeof InviteCodeRoute
 }
@@ -187,6 +200,13 @@ declare module '@tanstack/react-router' {
       path: '/spiritual'
       fullPath: '/spiritual'
       preLoaderRoute: typeof SpiritualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/report': {
+      id: '/report'
+      path: '/report'
+      fullPath: '/report'
+      preLoaderRoute: typeof ReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reminders': {
@@ -291,6 +311,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   ReflectRoute: ReflectRoute,
   RemindersRoute: RemindersRoute,
+  ReportRoute: ReportRoute,
   SpiritualRoute: SpiritualRoute,
   InviteCodeRoute: InviteCodeRoute,
 }
