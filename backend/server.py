@@ -1500,6 +1500,7 @@ async def create_community(body: CommunityIn, user: User = Depends(current_user)
         "members": 1,
         "official": False,
         "created_by": user.user_id,
+        "moderators": [user.user_id],
         "created_at": datetime.now(timezone.utc),
         "seed_version": 2,
     }
@@ -1511,6 +1512,43 @@ async def create_community(body: CommunityIn, user: User = Depends(current_user)
         upsert=True,
     )
     return doc
+
+
+def _is_community_mod(user: User, community: dict) -> bool:
+    if _is_moderator(user):
+        return True
+    mods = community.get("moderators") or []
+    return user.user_id in mods or community.get("created_by") == user.user_id
+
+
+@api.get("/communities/{community_id}/moderation")
+async def community_mod_queue(community_id: str, user: User = Depends(current_user)):
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+    if not _is_community_mod(user, comm):
+        raise HTTPException(status_code=403, detail="Community moderators only.")
+    # Find posts/comments/messages belonging to this community, then their reports
+    posts = await db.posts.find({"community_id": community_id}, {"_id": 0, "post_id": 1}).to_list(length=2000)
+    post_ids = [p["post_id"] for p in posts]
+    comments = await db.comments.find({"post_id": {"$in": post_ids}}, {"_id": 0, "comment_id": 1}).to_list(length=5000)
+    comment_ids = [c["comment_id"] for c in comments]
+    messages = await db.chat_messages.find({"community_id": community_id}, {"_id": 0, "message_id": 1}).to_list(length=5000)
+    message_ids = [m["message_id"] for m in messages]
+    reports = await db.reports.find({"$or": [
+        {"target_type": "post", "target_id": {"$in": post_ids}},
+        {"target_type": "comment", "target_id": {"$in": comment_ids}},
+        {"target_type": "message", "target_id": {"$in": message_ids}},
+    ], "status": "open"}, {"_id": 0}).sort("created_at", -1).to_list(length=200)
+    # Enrich targets
+    for r in reports:
+        if r["target_type"] == "post":
+            r["target"] = await db.posts.find_one({"post_id": r["target_id"]}, {"_id": 0})
+        elif r["target_type"] == "comment":
+            r["target"] = await db.comments.find_one({"comment_id": r["target_id"]}, {"_id": 0})
+        elif r["target_type"] == "message":
+            r["target"] = await db.chat_messages.find_one({"message_id": r["target_id"]}, {"_id": 0})
+    return {"community": comm, "is_moderator": True, "reports": reports}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1543,6 +1581,198 @@ async def list_notifications(user: User = Depends(current_user)):
 async def mark_read(user: User = Depends(current_user)):
     await db.notifications.update_many({"user_id": user.user_id, "read": False}, {"$set": {"read": True}})
     return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Home Jamatkhana + Geocoding (city lookup)
+# ──────────────────────────────────────────────────────────────────────────────
+class HomeJKIn(BaseModel):
+    jk_id: str
+
+
+@api.post("/profile/home-jamatkhana")
+async def set_home_jk(body: HomeJKIn, user: User = Depends(current_user)):
+    jk = await db.jamatkhanas.find_one({"jk_id": body.jk_id}, {"_id": 0})
+    if not jk:
+        raise HTTPException(status_code=404, detail="Jamatkhana not found")
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"home_jk_id": jk["jk_id"], "home_jk": jk, "city": jk["city"]}},
+    )
+    return {"ok": True, "jamatkhana": jk}
+
+
+@api.get("/geocode")
+async def geocode_city(q: str):
+    """Lightweight free-text city lookup against our jamatkhana directory.
+    Returns matching cities + nearby JKs. No external API needed."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"matches": [], "jamatkhanas": []}
+    matches = await db.jamatkhanas.find(
+        {"$or": [
+            {"city": {"$regex": q, "$options": "i"}},
+            {"country": {"$regex": q, "$options": "i"}},
+            {"name": {"$regex": q, "$options": "i"}},
+        ]}, {"_id": 0}
+    ).limit(12).to_list(length=12)
+    cities = []
+    seen = set()
+    for m in matches:
+        key = (m["city"], m["country"])
+        if key in seen:
+            continue
+        seen.add(key)
+        cities.append({"city": m["city"], "country": m["country"]})
+    return {"matches": cities, "jamatkhanas": matches}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# My Sangat — personal spiritual passport
+# ──────────────────────────────────────────────────────────────────────────────
+@api.get("/profile/sangat")
+async def my_sangat(user: User = Depends(current_user)):
+    # Memberships → communities
+    mems = await db.memberships.find({"user_id": user.user_id}, {"_id": 0}).to_list(length=100)
+    cids = [m["community_id"] for m in mems]
+    communities = await db.communities.find({"community_id": {"$in": cids}}, {"_id": 0}).to_list(length=100)
+    by_id = {c["community_id"]: c for c in communities}
+    enriched_mems = [{**m, "community": by_id.get(m["community_id"])} for m in mems if by_id.get(m["community_id"])]
+
+    # Mentor connections (mentee accepted requests)
+    accepted_sent = await db.mentorship_requests.find(
+        {"mentee_id": user.user_id, "status": "accepted"}, {"_id": 0}
+    ).to_list(length=20)
+    mentor_ids = [a["mentor_id"] for a in accepted_sent]
+    mentor_users = await db.users.find({"user_id": {"$in": mentor_ids}}, {"_id": 0, "user_id": 1, "name": 1, "city": 1}).to_list(length=20)
+    mentor_profiles = await db.mentor_profiles.find({"user_id": {"$in": mentor_ids}}, {"_id": 0}).to_list(length=20)
+    by_uid = {u["user_id"]: u for u in mentor_users}
+    bp_uid = {p["user_id"]: p for p in mentor_profiles}
+    mentors = [{**by_uid.get(mid, {}), "headline": (bp_uid.get(mid) or {}).get("headline")} for mid in mentor_ids]
+
+    # Mentees (mentor accepted received)
+    accepted_recv = await db.mentorship_requests.find(
+        {"mentor_id": user.user_id, "status": "accepted"}, {"_id": 0}
+    ).to_list(length=50)
+    mentee_count = len(accepted_recv)
+
+    # Khidmah for current month (reuse aggregate)
+    now = datetime.now(timezone.utc)
+    start, end = _month_window(now.year, now.month)
+    points = 0
+    # Volunteer RSVPs
+    vol_event_ids = [e["event_id"] for e in await db.events.find({"tag": "Volunteer"}, {"_id": 0, "event_id": 1}).to_list(length=200)]
+    rsvps_n = await db.rsvps.count_documents({"user_id": user.user_id, "event_id": {"$in": vol_event_ids}, "rsvp_at": {"$gte": start, "$lt": end}}) if vol_event_ids else 0
+    posts_n = await db.posts.count_documents({"user_id": user.user_id, "created_at": {"$gte": start, "$lt": end}, "likes": {"$gte": 1}})
+    comments_long = await db.comments.find({"user_id": user.user_id, "created_at": {"$gte": start, "$lt": end}}, {"_id": 0, "text": 1}).to_list(length=2000)
+    comments_n = sum(1 for c in comments_long if len(c.get("text") or "") >= 60)
+    mentor_accept_n = await db.mentorship_requests.count_documents({"mentor_id": user.user_id, "status": "accepted", "responded_at": {"$gte": start, "$lt": end}})
+    mentee_accept_n = await db.mentorship_requests.count_documents({"mentee_id": user.user_id, "status": "accepted", "responded_at": {"$gte": start, "$lt": end}})
+    points = rsvps_n * KHIDMAH_RULES["volunteer_rsvp"] + posts_n * KHIDMAH_RULES["post_with_likes"] + comments_n * KHIDMAH_RULES["kind_comment"] + mentor_accept_n * KHIDMAH_RULES["mentorship_accepted_mentor"] + mentee_accept_n * KHIDMAH_RULES["mentorship_accepted_mentee"]
+
+    # Tasbih streak
+    tasbih = await db.tasbih_state.find_one({"user_id": user.user_id}, {"_id": 0}) or {"streak": 0, "total": 0}
+
+    # Home jamatkhana
+    home_jk = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0})).get("home_jk")
+
+    return {
+        "user": {"user_id": user.user_id, "name": user.name, "city": user.city, "status": user.status},
+        "home_jamatkhana": home_jk,
+        "memberships": enriched_mems,
+        "mentors": mentors,
+        "mentee_count": mentee_count,
+        "khidmah_points": points,
+        "tasbih_streak": tasbih.get("streak", 0),
+        "tasbih_total": tasbih.get("total", 0),
+        "month": now.strftime("%B %Y"),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Noor Digest — weekly personalised reflection
+# ──────────────────────────────────────────────────────────────────────────────
+def _week_window():
+    now = datetime.now(timezone.utc)
+    # Week starts Sunday 00:00 UTC
+    weekday = (now.weekday() + 1) % 7  # Sun=0
+    start = (now - timedelta(days=weekday)).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=7)
+    return start, end, start.strftime("%Y-W%U")
+
+
+@api.get("/noor/digest")
+async def noor_digest(user: User = Depends(current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+    start, end, key = _week_window()
+    # Return cached digest if already generated this week
+    cached = await db.noor_digests.find_one({"user_id": user.user_id, "week_key": key}, {"_id": 0})
+    if cached:
+        return cached
+
+    # Pull this week's gentle data
+    journal = await db.journal.find({"user_id": user.user_id, "created_at": {"$gte": start, "$lt": end}}, {"_id": 0}).sort("created_at", 1).to_list(length=20)
+    tasbih_sessions = await db.tasbih_sessions.find({"user_id": user.user_id, "created_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=200)
+    dhikr_count = sum(t.get("count", 0) for t in tasbih_sessions)
+    dhikr_days = len({t.get("day") for t in tasbih_sessions})
+    streak = (await db.tasbih_state.find_one({"user_id": user.user_id}, {"_id": 0}) or {}).get("streak", 0)
+    mems = await db.memberships.count_documents({"user_id": user.user_id})
+    sangat = await my_sangat(user)
+    khidmah_pts = sangat.get("khidmah_points", 0)
+
+    if not journal and dhikr_count == 0 and khidmah_pts == 0:
+        digest_text = (
+            "A quiet week — the kind that doesn't ask much of you. \n"
+            "Sometimes the holy thing is just to keep showing up gently. "
+            "May the days ahead be soft on your heart, and may one small ritual return to you this week."
+        )
+        themes = ["stillness"]
+    else:
+        journal_excerpts = "\n".join([f"- {(j.get('title') or 'entry')}: {(j.get('body') or '')[:160]}" for j in journal[:6]]) or "(no journal entries)"
+        prompt = (
+            f"This is a private weekly reflection for a user of Tasbih.ai. Write a calm, "
+            f"4-sentence digest in second person ('You…') drawing only on the data below. "
+            f"Do NOT invent facts. End with one tiny invitation for next week.\n\n"
+            f"Data:\n"
+            f"- Journal entries this week:\n{journal_excerpts}\n"
+            f"- Tasbih dhikr count this week: {dhikr_count} (across {dhikr_days} day(s)). Current streak: {streak} day(s).\n"
+            f"- Communities joined: {mems}. Khidmah points this month: {khidmah_pts}.\n\n"
+            f"Tone: gentle, warm, never preachy. Avoid platitudes. No fatwas. No religious rulings."
+        )
+        try:
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"digest_{user.user_id}_{key}",
+                system_message=NOOR_SYSTEM_PROMPT,
+            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+            digest_text = await chat.send_message(UserMessage(text=prompt))
+        except Exception as e:
+            logger.exception("digest failed")
+            digest_text = "This week, you showed up. That is its own quiet victory."
+        themes = []
+        if journal: themes.append("reflection")
+        if dhikr_count > 0: themes.append("dhikr")
+        if khidmah_pts > 0: themes.append("khidmah")
+
+    doc = {
+        "user_id": user.user_id,
+        "week_key": key,
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "text": digest_text,
+        "themes": themes,
+        "stats": {
+            "dhikr_count": dhikr_count,
+            "dhikr_days": dhikr_days,
+            "streak": streak,
+            "journal_entries": len(journal),
+            "khidmah_points": khidmah_pts,
+        },
+        "generated_at": datetime.now(timezone.utc),
+    }
+    await db.noor_digests.insert_one(dict(doc))
+    return doc
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1634,7 +1864,135 @@ async def seed_data():
         pass
 
     # ── Jamatkhana directory ──
-    if await db.jamatkhanas.count_documents({}) == 0:
+    # Bumped seed version forces a full reseed so new entries flow in.
+    if await db.jamatkhanas.count_documents({"seed_version": {"$gte": 2}}) == 0:
+        await db.jamatkhanas.delete_many({})
+        jks = [
+            # Canada
+            ("Ismaili Centre Toronto", "Toronto", "Canada", 43.7286, -79.3373, "49 Wynford Drive, Toronto"),
+            ("Headquarters Jamatkhana Toronto", "Toronto", "Canada", 43.6532, -79.3832, "Downtown Toronto"),
+            ("Bayview Jamatkhana", "Toronto", "Canada", 43.7800, -79.3760, "Bayview Ave area, Toronto"),
+            ("Don Mills Jamatkhana", "Toronto", "Canada", 43.7421, -79.3457, "Don Mills, Toronto"),
+            ("Mississauga Jamatkhana", "Mississauga", "Canada", 43.5890, -79.6441, "Mississauga, ON"),
+            ("Brampton Jamatkhana", "Brampton", "Canada", 43.7315, -79.7624, "Brampton, ON"),
+            ("Markham Jamatkhana", "Markham", "Canada", 43.8561, -79.3370, "Markham, ON"),
+            ("Calgary Jamatkhana (Headquarters)", "Calgary", "Canada", 51.0447, -114.0719, "Calgary, AB"),
+            ("Calgary South Jamatkhana", "Calgary", "Canada", 50.9667, -114.0832, "Calgary South, AB"),
+            ("Edmonton Jamatkhana", "Edmonton", "Canada", 53.5461, -113.4938, "Edmonton, AB"),
+            ("Vancouver Jamatkhana (Burnaby)", "Burnaby", "Canada", 49.2488, -122.9805, "Burnaby, BC"),
+            ("Surrey Jamatkhana", "Surrey", "Canada", 49.1913, -122.8490, "Surrey, BC"),
+            ("Ottawa Jamatkhana", "Ottawa", "Canada", 45.4215, -75.6972, "Ottawa, ON"),
+            ("Montreal Jamatkhana", "Montreal", "Canada", 45.5017, -73.5673, "Montreal, QC"),
+            ("Winnipeg Jamatkhana", "Winnipeg", "Canada", 49.8951, -97.1384, "Winnipeg, MB"),
+            ("Halifax Jamatkhana", "Halifax", "Canada", 44.6488, -63.5752, "Halifax, NS"),
+            # United States
+            ("Ismaili Jamatkhana & Center, Plano", "Plano", "United States", 33.0198, -96.6989, "Plano, TX"),
+            ("Sugarland Jamatkhana", "Sugar Land", "United States", 29.5994, -95.6147, "Sugar Land, TX"),
+            ("Headquarters Jamatkhana Houston", "Houston", "United States", 29.7604, -95.3698, "Houston, TX"),
+            ("Houston SW Jamatkhana", "Houston", "United States", 29.6516, -95.5777, "Houston SW, TX"),
+            ("Austin Jamatkhana", "Austin", "United States", 30.2672, -97.7431, "Austin, TX"),
+            ("San Antonio Jamatkhana", "San Antonio", "United States", 29.4241, -98.4936, "San Antonio, TX"),
+            ("Atlanta Jamatkhana", "Atlanta", "United States", 33.7490, -84.3880, "Atlanta, GA"),
+            ("Charlotte Jamatkhana", "Charlotte", "United States", 35.2271, -80.8431, "Charlotte, NC"),
+            ("Manhattan Jamatkhana", "New York", "United States", 40.7831, -73.9712, "Upper West Side, NY"),
+            ("Long Island Jamatkhana", "Long Island", "United States", 40.7891, -73.1350, "Long Island, NY"),
+            ("Iselin Jamatkhana", "Iselin", "United States", 40.5754, -74.3221, "Iselin, NJ"),
+            ("Boston Jamatkhana", "Burlington", "United States", 42.5048, -71.1956, "Burlington, MA"),
+            ("Los Angeles Jamatkhana", "Sunset", "United States", 34.0982, -118.3267, "Sunset, CA"),
+            ("Orange County Jamatkhana", "Anaheim", "United States", 33.8366, -117.9143, "Anaheim, CA"),
+            ("San Diego Jamatkhana", "San Diego", "United States", 32.7157, -117.1611, "San Diego, CA"),
+            ("Bay Area Jamatkhana", "Sunnyvale", "United States", 37.3688, -122.0363, "Sunnyvale, CA"),
+            ("Sacramento Jamatkhana", "Sacramento", "United States", 38.5816, -121.4944, "Sacramento, CA"),
+            ("Chicago Jamatkhana", "Glenview", "United States", 42.0697, -87.7878, "Glenview, IL"),
+            ("Orlando Jamatkhana", "Orlando", "United States", 28.5383, -81.3792, "Orlando, FL"),
+            ("Miami Jamatkhana", "Miami", "United States", 25.7617, -80.1918, "Miami, FL"),
+            ("Tampa Jamatkhana", "Tampa", "United States", 27.9506, -82.4572, "Tampa, FL"),
+            ("DC Metro Jamatkhana", "Washington", "United States", 38.9072, -77.0369, "Washington, DC"),
+            ("Seattle Jamatkhana", "Seattle", "United States", 47.6062, -122.3321, "Seattle, WA"),
+            ("Phoenix Jamatkhana", "Phoenix", "United States", 33.4484, -112.0740, "Phoenix, AZ"),
+            ("Denver Jamatkhana", "Denver", "United States", 39.7392, -104.9903, "Denver, CO"),
+            # United Kingdom
+            ("Ismaili Centre London", "London", "United Kingdom", 51.4955, -0.1747, "1-7 Cromwell Gardens, London SW7"),
+            ("Aga Khan Centre", "London", "United Kingdom", 51.5410, -0.1276, "10 Handyside Street, King's Cross, London"),
+            ("Headquarters Jamatkhana London (South Kensington)", "London", "United Kingdom", 51.4955, -0.1747, "South Kensington, London"),
+            ("Hounslow Jamatkhana", "Hounslow", "United Kingdom", 51.4685, -0.3614, "Hounslow, London"),
+            ("Wembley Jamatkhana", "Wembley", "United Kingdom", 51.5560, -0.2802, "Wembley, London"),
+            ("Walthamstow Jamatkhana", "Walthamstow", "United Kingdom", 51.5825, -0.0190, "Walthamstow, London"),
+            ("Manchester Jamatkhana", "Manchester", "United Kingdom", 53.4808, -2.2426, "Manchester"),
+            ("Birmingham Jamatkhana", "Birmingham", "United Kingdom", 52.4862, -1.8904, "Birmingham"),
+            ("Glasgow Jamatkhana", "Glasgow", "United Kingdom", 55.8642, -4.2518, "Glasgow"),
+            ("Leicester Jamatkhana", "Leicester", "United Kingdom", 52.6369, -1.1398, "Leicester"),
+            # Portugal
+            ("Ismaili Centre Lisbon", "Lisbon", "Portugal", 38.7510, -9.1985, "Av. Lusíada, Lisboa"),
+            ("Porto Jamatkhana", "Porto", "Portugal", 41.1579, -8.6291, "Porto"),
+            # France & Belgium
+            ("Jamatkhana Paris", "Paris", "France", 48.8566, 2.3522, "Paris"),
+            ("Lyon Jamatkhana", "Lyon", "France", 45.7640, 4.8357, "Lyon"),
+            ("Brussels Jamatkhana", "Brussels", "Belgium", 50.8503, 4.3517, "Brussels"),
+            # UAE
+            ("Ismaili Centre Dubai", "Dubai", "UAE", 25.2289, 55.3236, "Bur Dubai"),
+            ("Dubai Marina Jamatkhana", "Dubai", "UAE", 25.0805, 55.1403, "Dubai Marina"),
+            ("Khalifa City Jamatkhana", "Abu Dhabi", "UAE", 24.4257, 54.5870, "Khalifa City, Abu Dhabi"),
+            ("Sharjah Jamatkhana", "Sharjah", "UAE", 25.3463, 55.4209, "Sharjah"),
+            # Kenya & Tanzania & Uganda
+            ("Headquarters Jamatkhana Nairobi", "Nairobi", "Kenya", -1.2864, 36.8172, "Nairobi"),
+            ("Parklands Jamatkhana Nairobi", "Nairobi", "Kenya", -1.2630, 36.8200, "Parklands, Nairobi"),
+            ("Mombasa Jamatkhana", "Mombasa", "Kenya", -4.0435, 39.6682, "Mombasa"),
+            ("Kisumu Jamatkhana", "Kisumu", "Kenya", -0.0917, 34.7679, "Kisumu"),
+            ("Dar es Salaam Jamatkhana", "Dar es Salaam", "Tanzania", -6.7924, 39.2083, "Dar es Salaam"),
+            ("Arusha Jamatkhana", "Arusha", "Tanzania", -3.3869, 36.6829, "Arusha"),
+            ("Kampala Jamatkhana", "Kampala", "Uganda", 0.3476, 32.5825, "Kampala"),
+            # India
+            ("Hasanabad Jamatkhana", "Mumbai", "India", 18.9750, 72.8258, "Mazgaon, Mumbai"),
+            ("Darkhana Jamatkhana Mumbai", "Mumbai", "India", 18.9388, 72.8354, "Mumbai"),
+            ("Bandra Jamatkhana", "Mumbai", "India", 19.0596, 72.8295, "Bandra, Mumbai"),
+            ("Pune Jamatkhana", "Pune", "India", 18.5204, 73.8567, "Pune"),
+            ("Ahmedabad Jamatkhana", "Ahmedabad", "India", 23.0225, 72.5714, "Ahmedabad"),
+            ("Hyderabad Jamatkhana", "Hyderabad", "India", 17.3850, 78.4867, "Hyderabad"),
+            ("Bangalore Jamatkhana", "Bangalore", "India", 12.9716, 77.5946, "Bangalore"),
+            ("Chennai Jamatkhana", "Chennai", "India", 13.0827, 80.2707, "Chennai"),
+            ("Delhi Jamatkhana", "New Delhi", "India", 28.6139, 77.2090, "New Delhi"),
+            ("Vadodara Jamatkhana", "Vadodara", "India", 22.3072, 73.1812, "Vadodara"),
+            ("Surat Jamatkhana", "Surat", "India", 21.1702, 72.8311, "Surat"),
+            # Pakistan
+            ("Garden Jamatkhana", "Karachi", "Pakistan", 24.8693, 67.0231, "Garden, Karachi"),
+            ("Darkhana Jamatkhana Karachi", "Karachi", "Pakistan", 24.8607, 67.0011, "Karachi"),
+            ("Kharadar Jamatkhana", "Karachi", "Pakistan", 24.8475, 67.0070, "Kharadar, Karachi"),
+            ("Lahore Jamatkhana", "Lahore", "Pakistan", 31.5204, 74.3587, "Lahore"),
+            ("Islamabad Jamatkhana", "Islamabad", "Pakistan", 33.6844, 73.0479, "Islamabad"),
+            ("Rawalpindi Jamatkhana", "Rawalpindi", "Pakistan", 33.5651, 73.0169, "Rawalpindi"),
+            ("Hunza Aliabad Jamatkhana", "Hunza", "Pakistan", 36.3169, 74.6500, "Aliabad, Hunza"),
+            ("Gilgit Jamatkhana", "Gilgit", "Pakistan", 35.9208, 74.3144, "Gilgit"),
+            ("Skardu Jamatkhana", "Skardu", "Pakistan", 35.2954, 75.6334, "Skardu"),
+            ("Chitral Jamatkhana", "Chitral", "Pakistan", 35.8511, 71.7848, "Chitral"),
+            # Tajikistan / Afghanistan / Syria
+            ("Ismaili Centre Dushanbe", "Dushanbe", "Tajikistan", 38.5598, 68.7870, "Dushanbe"),
+            ("Khorog Jamatkhana", "Khorog", "Tajikistan", 37.4894, 71.5556, "Khorog, GBAO"),
+            ("Murghab Jamatkhana", "Murghab", "Tajikistan", 38.1734, 73.9722, "Murghab"),
+            ("Salamiyah Jamatkhana", "Salamiyah", "Syria", 35.0117, 37.0533, "Salamiyah"),
+            # Bangladesh / Singapore / Australia / Madagascar
+            ("Singapore Jamatkhana", "Singapore", "Singapore", 1.3521, 103.8198, "Singapore"),
+            ("Sydney Jamatkhana", "Sydney", "Australia", -33.8688, 151.2093, "Sydney"),
+            ("Melbourne Jamatkhana", "Melbourne", "Australia", -37.8136, 144.9631, "Melbourne"),
+            ("Brisbane Jamatkhana", "Brisbane", "Australia", -27.4698, 153.0251, "Brisbane"),
+            ("Perth Jamatkhana", "Perth", "Australia", -31.9505, 115.8605, "Perth"),
+            ("Dhaka Jamatkhana", "Dhaka", "Bangladesh", 23.8103, 90.4125, "Dhaka"),
+            ("Antananarivo Jamatkhana", "Antananarivo", "Madagascar", -18.8792, 47.5079, "Antananarivo"),
+        ]
+        await db.jamatkhanas.insert_many([
+            {
+                "jk_id": f"jk_{i:03d}",
+                "name": name,
+                "city": city,
+                "country": country,
+                "lat": lat,
+                "lng": lng,
+                "address": addr,
+                "type": "jamatkhana",
+                "seed_version": 2,
+            }
+            for i, (name, city, country, lat, lng, addr) in enumerate(jks, start=1)
+        ])
         jks = [
             # Canada
             ("Ismaili Centre Toronto", "Toronto", "Canada", 49 / 49, 43.7286, -79.3373, "49 Wynford Drive, Toronto"),
