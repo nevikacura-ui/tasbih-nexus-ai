@@ -29,6 +29,9 @@ import NoorDigestPage from "./pages/NoorDigest";
 import CalendarPage from "./pages/Calendar";
 import AdminPage from "./pages/Admin";
 import StewardsPage from "./pages/Stewards";
+import PrivacyPage from "./pages/Privacy";
+import TermsPage from "./pages/Terms";
+import YearMosaicPage from "./pages/YearMosaic";
 
 function Protected({ children }) {
   // Non-blocking: always render. Auth happens in background and pages handle
@@ -64,6 +67,9 @@ function Router() {
       <Route path="/calendar" element={<Protected><CalendarPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="/stewards" element={<Protected><StewardsPage /></Protected>} />
+      <Route path="/year-in-noor" element={<Protected><YearMosaicPage /></Protected>} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
       <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />

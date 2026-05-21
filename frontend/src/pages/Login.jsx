@@ -29,10 +29,17 @@ const COUNTRY_CODES = [
 export default function LoginPage() {
   const navigate = useNavigate();
   const { user, loading, setUser } = useAuth();
+  // Pre-fill codes from email deep-link: /login?c1=ABC&c2=DEF
+  const initialCodes = (() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      return { c1: (sp.get("c1") || "").toUpperCase().slice(0, 12), c2: (sp.get("c2") || "").toUpperCase().slice(0, 12) };
+    } catch { return { c1: "", c2: "" }; }
+  })();
   // steps: invite → register → otp → google (legacy)
   const [step, setStep] = useState(INVITE_GATE_ENABLED ? "invite" : "register");
-  const [code1, setCode1] = useState("");
-  const [code2, setCode2] = useState("");
+  const [code1, setCode1] = useState(initialCodes.c1);
+  const [code2, setCode2] = useState(initialCodes.c2);
   const [pendingToken, setPendingToken] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -290,6 +297,11 @@ export default function LoginPage() {
           <p className="pt-2 text-center text-[10px] uppercase tracking-[0.18em] text-deep/40">
             Independent · community-driven · non-authoritative
           </p>
+          <div className="flex items-center justify-center gap-3 text-[10px] text-deep/45">
+            <a href="/privacy" data-testid="login-privacy">Privacy</a>
+            <span className="text-deep/15">·</span>
+            <a href="/terms" data-testid="login-terms">Terms</a>
+          </div>
         </section>
       </div>
     </div>

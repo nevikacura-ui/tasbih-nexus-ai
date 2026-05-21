@@ -84,6 +84,9 @@ export default function NoorDigestPage() {
               <p className="mt-2 px-1 text-center text-[10px] text-deep/45">
                 Keep your Sunday reflections in one quiet place — your private yearly mosaic.
               </p>
+              <Link to="/year-in-noor" data-testid="digest-mosaic-link" className="glass mt-3 flex items-center justify-center gap-1.5 rounded-full py-2 text-[11px] font-medium text-deep tap-scale">
+                <Calendar className="h-3 w-3 text-gold" /> See your year in Noor
+              </Link>
             </div>
           )}
         </section>

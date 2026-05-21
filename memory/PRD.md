@@ -203,6 +203,15 @@ The experience should feel:
 - ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
 - ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
 
+### Launch polish (Feb 2026)
+- ✅ **Deep-link invite codes** — emails now use `/login?c1=...&c2=...`; Login parses URL params and pre-fills both codes. Two-tap registration from email to app.
+- ✅ **Privacy Policy** at `/privacy` (public, no auth) — plain-English data practices, third-party list (MSG91, Resend, Anthropic, Google Geocoding, OSM, alquran.cloud), user rights, children clause, Noor AI disclaimer.
+- ✅ **Terms of Use** at `/terms` (public, no auth) — invitation rules, conduct, Noor AI disclaimer, organisation accounts, content licence, governing law.
+- ✅ Footer links on Login + Profile pages (Privacy · Terms · Contact).
+- ✅ **Year in Noor mosaic** at `/year-in-noor` — 52 quiet tile-grid; each lit tile is a saved Sunday digest. Tap to read the week's reflection. Linked from Noor Digest page.
+- ✅ **`/api/noor/year-mosaic`** endpoint — pulls all journal entries tagged `noor-digest` for current year, returns 53-tile array (ISO weeks) with current-week marker.
+- ✅ **Onboarding note** at `/app/memory/ONBOARDING_NOTE.md` — copy-paste short + long versions for the first 15 inviters, with each pre-filled deep-link.
+
 ### Launch-readiness audit (Feb 2026)
 - ✅ Live-tested MSG91 WhatsApp OTP end-to-end (real send + verify via hash-injected code → 90-day session)
 - ✅ Live-tested Resend email invite (sandbox sender, `delivered@resend.dev`)

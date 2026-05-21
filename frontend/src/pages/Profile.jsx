@@ -132,6 +132,13 @@ export default function ProfilePage() {
           >
             <LogOut className="h-4 w-4" /> Sign out
           </button>
+          <div className="mt-5 flex items-center justify-center gap-4 text-[11px] text-deep/55">
+            <Link to="/privacy" data-testid="footer-privacy" className="tap-scale">Privacy</Link>
+            <span className="text-deep/20">·</span>
+            <Link to="/terms" data-testid="footer-terms" className="tap-scale">Terms</Link>
+            <span className="text-deep/20">·</span>
+            <a href="mailto:hello@tasbih.ai" className="tap-scale">Contact</a>
+          </div>
         </section>
       </div>
     </MobileShell>

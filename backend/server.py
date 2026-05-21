@@ -614,7 +614,7 @@ def _invite_email_html(*, recipient_name: str, sender_name: str, second_inviter:
           Both codes are from <strong>two different members</strong> who quietly vouch for you. They unlock one registration on the app.
         </td></tr>
         <tr><td align="center" style="padding:22px 4px 6px;">
-          <a href="{app_url}/login" style="display:inline-block;background:#0F3D36;color:#F6F1E7;text-decoration:none;font-size:14px;font-weight:500;padding:14px 28px;border-radius:999px;letter-spacing:0.02em;">Open Tasbih.ai →</a>
+          <a href="{app_url}/login?c1={code1}&amp;c2={code2}" style="display:inline-block;background:#0F3D36;color:#F6F1E7;text-decoration:none;font-size:14px;font-weight:500;padding:14px 28px;border-radius:999px;letter-spacing:0.02em;">Open Tasbih.ai →</a>
         </td></tr>
         <tr><td style="font-size:12px;line-height:1.6;color:#0F3D36;opacity:0.55;padding:22px 4px 0;text-align:center;">
           Independent · community-driven · non-authoritative<br/>
@@ -2332,6 +2332,53 @@ def _week_window():
     start = (now - timedelta(days=weekday)).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=7)
     return start, end, start.strftime("%Y-W%U")
+
+
+@api.get("/noor/year-mosaic")
+async def noor_year_mosaic(user: User = Depends(current_user)):
+    """52-tile visualisation of all saved Sunday digests for the current year."""
+    now = datetime.now(timezone.utc)
+    year = now.year
+    start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    entries = await db.journal_entries.find(
+        {"user_id": user.user_id, "tags": "noor-digest",
+         "created_at": {"$gte": start, "$lt": end}},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(length=60)
+    by_week = {}
+    for e in entries:
+        ts = e.get("created_at")
+        if isinstance(ts, str):
+            ts = datetime.fromisoformat(ts)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        iso = ts.isocalendar()
+        by_week[iso.week] = {
+            "title": e.get("title") or "",
+            "body": e.get("body") or "",
+            "date": ts.date().isoformat(),
+            "entry_id": e.get("entry_id"),
+        }
+    tiles = []
+    for w in range(1, 54):
+        tile = by_week.get(w)
+        tiles.append({
+            "week": w,
+            "lit": bool(tile),
+            "title": (tile or {}).get("title", ""),
+            "body": (tile or {}).get("body", ""),
+            "date": (tile or {}).get("date", ""),
+            "entry_id": (tile or {}).get("entry_id"),
+        })
+    current_iso = now.isocalendar()
+    return {
+        "year": year,
+        "current_week": current_iso.week,
+        "tiles": tiles,
+        "lit_count": len(by_week),
+    }
+
 
 
 @api.get("/noor/digest")
