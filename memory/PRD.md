@@ -203,6 +203,17 @@ The experience should feel:
 - ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
 - ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
 
+### Admin org-verification + Resend domain registration (Feb 2026)
+- ✅ Backend admin endpoints: `GET /api/admin/me`, `GET /api/admin/orgs`, `POST /api/admin/orgs/{id}/verify` with cascade to `communities` + `chat_messages` so the verified badge appears everywhere instantly.
+- ✅ Admin guard: `status == "admin"` OR `email == "admin@tasbih.ai"`. Profile shows a hidden `Admin · Stewards` row only when `/api/admin/me` returns `is_admin: true`.
+- ✅ Frontend `/admin` page with Pending / Verified sections, single-tap toggle, calm copy, cascading update.
+- ✅ Resend domain `mail.tasbih.ai` registered with Resend API (`id: ae3c7fd6-d890-4690-a47c-9013cb18213a`, region `us-east-1`, status `not_started`). DNS records documented at `/app/memory/RESEND_DNS_SETUP.md` for user to paste at the domain provider. Once verified, switch `RESEND_FROM` to `Tasbih.ai <noor@mail.tasbih.ai>`.
+
+### Bottom nav rebuild (Feb 2026)
+- ✅ MobileShell bottom-nav rewritten: full-width flat bar (no floating pill), 71px tall, fixed at bottom with `pb-[env(safe-area-inset-bottom)]` for iOS notch.
+- ✅ Hide-on-scroll-down (translate-y-full) / reveal-on-scroll-up (translate-y-0) using `requestAnimationFrame`-throttled scroll listener with 6px deadband.
+- ✅ Main content padded `pb-24` so no list item is ever obscured.
+
 ### Bottom nav + email invite (Feb 2026)
 - ✅ Bottom nav rebuilt as a flat **fixed bar with hide-on-scroll-down / reveal-on-scroll-up** (was a floating pill that clipped content). Safe-area-inset on iOS. `pb-24` content padding ensures nothing is obscured.
 - ✅ **"Invite a friend by email"** share-sheet on `/invites` — recipient email + optional name + optional co-signer ("from me and Sara"). Backend mints two fresh codes issued_by the sender, tied to the recipient's email via `shared_with_email`, sends via **Resend** with a calm Georgia-serif HTML email (emerald + gold, Yā ʿAlī Madad header, two large code chips, Open Tasbih.ai CTA). Rolls back code creation on Resend failure.
