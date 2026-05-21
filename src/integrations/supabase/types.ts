@@ -111,7 +111,7 @@ export type Database = {
       redeem_referral: { Args: { _code: string }; Returns: Json }
     }
     Enums: {
-      app_role: "member" | "mentor" | "admin"
+      app_role: "member" | "mentor" | "admin" | "moderator"
       profile_status: "explorer" | "member"
     }
     CompositeTypes: {
@@ -240,7 +240,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["member", "mentor", "admin"],
+      app_role: ["member", "mentor", "admin", "moderator"],
       profile_status: ["explorer", "member"],
     },
   },
