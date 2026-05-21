@@ -52,6 +52,7 @@ The experience should feel:
 - ✅ Strict safety guardrails: NO fatwas, NO sectarian content, NO political/medical advice
 - ✅ Crisis-aware responses (gentle helpline pointer)
 - ✅ Suggested prompt chips ("I feel anxious", "Help me reflect"…)
+- ✅ **Word-by-word streaming effect** for a calm typing reveal
 
 ### Tasbih
 - ✅ Animated circular counter (0/99 default)
@@ -78,14 +79,19 @@ The experience should feel:
 
 ### Communities + Chat
 - ✅ 6 seeded circles (Youth, Reflection, Volunteers, Founders, Mentors, Families)
-- ✅ Search + 6 filters (All, Youth, Volunteers, Mentorship, Reflection, Family)
+- ✅ Search + 6 filters
 - ✅ Join / Joined states (persisted)
-- ✅ **Community chat** — polling-based real-time chat per circle
-  - Optimistic message UI
-  - 4-second polling for new messages
-  - Auto-joins on first send
-  - Glass message bubbles (gold for others, emerald for self)
-  - Gentle disclaimer ("no fatwas, no debates")
+- ✅ **Live community chat** — true WebSocket (`/api/ws/community/{id}`)
+  - Real-time message delivery (no polling)
+  - **Typing indicators** ("Layla is typing…")
+  - REST fallback if socket drops
+  - Optimistic UI on send
+  - Glass message bubbles + auth via short-lived `/auth/token`
+- ✅ **Community feed** (posts + likes + comments) — full Phase 2 community depth
+  - Compose post (up to 2000 chars)
+  - Heart-based reactions (toggle, persisted)
+  - Threaded comments (up to 800 chars each)
+  - Tabbed UI in each circle: **Live chat** ↔ **Feed**
 - ✅ Mentorship grid (4 sample mentors)
 
 ### Events
@@ -101,10 +107,17 @@ The experience should feel:
 ### Profile
 - ✅ Stats (streak, dhikr, entries)
 - ✅ Badge strip
-- ✅ Row-links to Invites, Journal, Tasbih, Reminders
+- ✅ Row-links to Invites, Journal, Tasbih, Reminders, **Moderation queue**
 - ✅ Memberships list
 - ✅ Sign out
 - ✅ Non-authority disclaimer
+
+### Moderation & Trust
+- ✅ **Report any post, comment, or chat message** (inline flag button)
+- ✅ Backend report queue (`/api/reports`) gated to `moderator`/`admin` roles
+- ✅ **Moderation page** for moderators — Open / Resolved / All tabs
+- ✅ Two-action workflow per report: **Dismiss** or **Remove content** (soft-removes target)
+- ✅ Admin promote endpoint (`POST /api/admin/promote`)
 
 ### Splash + brand
 - ✅ Cinematic full-screen **splash on first session** (user-supplied art)

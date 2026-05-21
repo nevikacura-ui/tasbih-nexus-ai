@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict, Set
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Cookie, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Cookie, Header, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -302,6 +304,27 @@ async def auth_guest(response: Response):
 @api.get("/auth/me", response_model=User)
 async def auth_me(user: User = Depends(current_user)):
     return user
+
+
+@api.get("/auth/token")
+async def auth_token(
+    session_token: Optional[str] = Cookie(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Return the current session token so frontends can attach it to WebSocket URLs.
+
+    Httponly cookies cannot be read by JS, so this small helper returns the token to
+    an already-authenticated browser session (via the cookie) for WebSocket use only.
+    """
+    token = session_token
+    if not token and authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    sess = await _get_session(token)
+    if not sess:
+        raise HTTPException(status_code=401, detail="Session expired")
+    return {"token": token}
 
 
 @api.post("/auth/logout")
@@ -799,6 +822,287 @@ async def delete_reminder(rid: str, user: User = Depends(current_user)):
     r = await db.reminders.delete_one({"reminder_id": rid, "user_id": user.user_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Reminder not found")
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WebSocket — real-time community chat + typing indicators
+# ──────────────────────────────────────────────────────────────────────────────
+class ChatHub:
+    def __init__(self):
+        self.rooms: Dict[str, Set[WebSocket]] = {}
+        self.meta: Dict[WebSocket, dict] = {}
+        self.lock = asyncio.Lock()
+
+    async def join(self, community_id: str, ws: WebSocket, user_info: dict):
+        async with self.lock:
+            self.rooms.setdefault(community_id, set()).add(ws)
+            self.meta[ws] = {"community_id": community_id, **user_info}
+
+    async def leave(self, ws: WebSocket):
+        async with self.lock:
+            info = self.meta.pop(ws, None)
+            if info:
+                room = self.rooms.get(info["community_id"])
+                if room and ws in room:
+                    room.discard(ws)
+
+    async def broadcast(self, community_id: str, payload: dict, exclude: Optional[WebSocket] = None):
+        targets = list(self.rooms.get(community_id, set()))
+        msg = json.dumps(payload, default=str)
+        for w in targets:
+            if w is exclude:
+                continue
+            try:
+                await w.send_text(msg)
+            except Exception:
+                pass
+
+hub = ChatHub()
+
+
+async def _user_from_token(token: Optional[str]) -> Optional[dict]:
+    if not token:
+        return None
+    sess = await _get_session(token)
+    if not sess:
+        return None
+    return await db.users.find_one({"user_id": sess["user_id"]}, {"_id": 0})
+
+
+@app.websocket("/api/ws/community/{community_id}")
+async def ws_community(websocket: WebSocket, community_id: str, token: Optional[str] = Query(default=None)):
+    await websocket.accept()
+    user = await _user_from_token(token)
+    if not user:
+        await websocket.send_text(json.dumps({"type": "error", "message": "auth_required"}))
+        await websocket.close(code=4401)
+        return
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        await websocket.send_text(json.dumps({"type": "error", "message": "not_found"}))
+        await websocket.close(code=4404)
+        return
+
+    await hub.join(community_id, websocket, {"user_id": user["user_id"], "name": user["name"]})
+    await websocket.send_text(json.dumps({"type": "joined", "community_id": community_id}))
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            kind = data.get("type")
+            if kind == "typing":
+                await hub.broadcast(community_id, {
+                    "type": "typing",
+                    "user_id": user["user_id"],
+                    "name": user["name"],
+                }, exclude=websocket)
+            elif kind == "message":
+                text = (data.get("text") or "").strip()
+                if not text:
+                    continue
+                if len(text) > 1000:
+                    await websocket.send_text(json.dumps({"type": "error", "message": "too_long"}))
+                    continue
+                msg = {
+                    "message_id": f"msg_{uuid.uuid4().hex[:12]}",
+                    "community_id": community_id,
+                    "user_id": user["user_id"],
+                    "author_name": user["name"],
+                    "text": text,
+                    "created_at": datetime.now(timezone.utc),
+                }
+                await db.chat_messages.insert_one(dict(msg))
+                # Broadcast to everyone (including sender for confirmation)
+                payload = {**msg, "created_at": msg["created_at"].isoformat(), "type": "message"}
+                await hub.broadcast(community_id, payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await hub.leave(websocket)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Community Feeds — posts, comments, reactions
+# ──────────────────────────────────────────────────────────────────────────────
+class PostIn(BaseModel):
+    text: str
+
+
+class CommentIn(BaseModel):
+    text: str
+
+
+@api.get("/communities/{community_id}/posts")
+async def list_posts(community_id: str, user: User = Depends(current_user)):
+    posts = await db.posts.find({"community_id": community_id}, {"_id": 0}).sort("created_at", -1).to_list(length=80)
+    # Attach comment counts + my reaction state in one go
+    ids = [p["post_id"] for p in posts]
+    comment_counts = {}
+    if ids:
+        agg = await db.comments.aggregate([
+            {"$match": {"post_id": {"$in": ids}}},
+            {"$group": {"_id": "$post_id", "n": {"$sum": 1}}},
+        ]).to_list(length=200)
+        comment_counts = {a["_id"]: a["n"] for a in agg}
+    my_reacts = await db.reactions.find({"user_id": user.user_id, "post_id": {"$in": ids}}, {"_id": 0}).to_list(length=200)
+    my_react_set = {r["post_id"] for r in my_reacts}
+    for p in posts:
+        p["comments"] = comment_counts.get(p["post_id"], 0)
+        p["liked_by_me"] = p["post_id"] in my_react_set
+    return {"posts": posts}
+
+
+@api.post("/communities/{community_id}/posts")
+async def create_post(community_id: str, body: PostIn, user: User = Depends(current_user)):
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+    text = body.text.strip()
+    if not text or len(text) > 2000:
+        raise HTTPException(status_code=400, detail="Post text must be 1–2000 chars.")
+    post = {
+        "post_id": f"post_{uuid.uuid4().hex[:12]}",
+        "community_id": community_id,
+        "user_id": user.user_id,
+        "author_name": user.name,
+        "text": text,
+        "likes": 0,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.posts.insert_one(dict(post))
+    post["comments"] = 0
+    post["liked_by_me"] = False
+    return post
+
+
+@api.post("/posts/{post_id}/like")
+async def toggle_like(post_id: str, user: User = Depends(current_user)):
+    existing = await db.reactions.find_one({"user_id": user.user_id, "post_id": post_id}, {"_id": 0})
+    if existing:
+        await db.reactions.delete_one({"user_id": user.user_id, "post_id": post_id})
+        await db.posts.update_one({"post_id": post_id}, {"$inc": {"likes": -1}})
+        liked = False
+    else:
+        await db.reactions.insert_one({
+            "user_id": user.user_id, "post_id": post_id,
+            "kind": "like", "created_at": datetime.now(timezone.utc),
+        })
+        await db.posts.update_one({"post_id": post_id}, {"$inc": {"likes": 1}})
+        liked = True
+    p = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    return {"liked": liked, "likes": (p or {}).get("likes", 0)}
+
+
+@api.get("/posts/{post_id}/comments")
+async def list_comments(post_id: str, user: User = Depends(current_user)):
+    items = await db.comments.find({"post_id": post_id}, {"_id": 0}).sort("created_at", 1).to_list(length=200)
+    return {"comments": items}
+
+
+@api.post("/posts/{post_id}/comments")
+async def create_comment(post_id: str, body: CommentIn, user: User = Depends(current_user)):
+    text = body.text.strip()
+    if not text or len(text) > 800:
+        raise HTTPException(status_code=400, detail="Comment must be 1–800 chars.")
+    comment = {
+        "comment_id": f"cmt_{uuid.uuid4().hex[:12]}",
+        "post_id": post_id,
+        "user_id": user.user_id,
+        "author_name": user.name,
+        "text": text,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.comments.insert_one(dict(comment))
+    return comment
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Moderation — reports + queue
+# ──────────────────────────────────────────────────────────────────────────────
+class ReportIn(BaseModel):
+    target_type: str  # post | comment | message | user
+    target_id: str
+    reason: str
+
+
+def _is_moderator(user: User) -> bool:
+    # Conventions: users whose status is "moderator" or "admin", or seeded admin emails
+    return user.status in ("moderator", "admin") or user.email.lower() in {"admin@tasbih.ai"}
+
+
+@api.post("/reports")
+async def create_report(body: ReportIn, user: User = Depends(current_user)):
+    if body.target_type not in {"post", "comment", "message", "user"}:
+        raise HTTPException(status_code=400, detail="Invalid target_type")
+    if not body.reason.strip():
+        raise HTTPException(status_code=400, detail="A short reason helps moderators act faster.")
+    report = {
+        "report_id": f"rep_{uuid.uuid4().hex[:12]}",
+        "target_type": body.target_type,
+        "target_id": body.target_id,
+        "reason": body.reason.strip()[:500],
+        "reporter_id": user.user_id,
+        "reporter_name": user.name,
+        "status": "open",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.reports.insert_one(dict(report))
+    return {"ok": True, "report_id": report["report_id"]}
+
+
+@api.get("/reports")
+async def list_reports(status: str = Query(default="open"), user: User = Depends(current_user)):
+    if not _is_moderator(user):
+        raise HTTPException(status_code=403, detail="Moderators only")
+    q = {} if status == "all" else {"status": status}
+    items = await db.reports.find(q, {"_id": 0}).sort("created_at", -1).to_list(length=200)
+    # Enrich with target snippet
+    for r in items:
+        if r["target_type"] == "post":
+            t = await db.posts.find_one({"post_id": r["target_id"]}, {"_id": 0})
+        elif r["target_type"] == "comment":
+            t = await db.comments.find_one({"comment_id": r["target_id"]}, {"_id": 0})
+        elif r["target_type"] == "message":
+            t = await db.chat_messages.find_one({"message_id": r["target_id"]}, {"_id": 0})
+        else:
+            t = None
+        r["target"] = t
+    return {"reports": items}
+
+
+@api.post("/reports/{report_id}/resolve")
+async def resolve_report(report_id: str, action: str = Query(default="dismiss"), user: User = Depends(current_user)):
+    if not _is_moderator(user):
+        raise HTTPException(status_code=403, detail="Moderators only")
+    r = await db.reports.find_one({"report_id": report_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Report not found")
+    if action == "remove":
+        # Soft-remove the target
+        if r["target_type"] == "post":
+            await db.posts.update_one({"post_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
+        elif r["target_type"] == "comment":
+            await db.comments.update_one({"comment_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
+        elif r["target_type"] == "message":
+            await db.chat_messages.update_one({"message_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
+    await db.reports.update_one(
+        {"report_id": report_id},
+        {"$set": {"status": "resolved", "action": action, "resolved_by": user.user_id, "resolved_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True}
+
+
+@api.post("/admin/promote")
+async def promote_moderator(email: str, user: User = Depends(current_user)):
+    if user.status != "admin" and user.email.lower() != "admin@tasbih.ai":
+        raise HTTPException(status_code=403, detail="Admins only")
+    res = await db.users.update_one({"email": email.lower()}, {"$set": {"status": "moderator"}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True}
 
 

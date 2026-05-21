@@ -82,7 +82,7 @@ export default function ProfilePage() {
           <RowLink to="/journal" icon={BookOpen} title="My journal" sub={`${journalCount} private entries`} test="row-journal" />
           <RowLink to="/tasbih" icon={Flame} title="Dhikr & streaks" sub={`${tasbih.streak ?? 0}-day streak`} test="row-tasbih" />
           <RowLink to="/reminders" icon={Bell} title="Reminders & Noor Nudges" sub="Soft in-app cues for prayer, dhikr & journaling" test="row-reminders" />
-          <Row icon={ShieldCheck} title="Community Guidelines" sub="Calm, respectful, non-authoritative" />
+          <RowLink to="/moderation" icon={ShieldCheck} title="Moderation queue" sub="Moderators & admins — keep the circle calm" test="row-moderation" />
         </section>
 
         {memberships.length > 0 && (

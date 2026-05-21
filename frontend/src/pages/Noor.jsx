@@ -28,7 +28,27 @@ export default function NoorPage() {
     try {
       const r = await api.post("/noor/chat", { message: text, session_id: sessionId });
       setSessionId(r.data.session_id);
-      setMessages((m) => [...m, { role: "noor", text: r.data.reply }]);
+      // Stream the reply word-by-word for a calm typing effect
+      const full = r.data.reply || "";
+      const idx = await new Promise((resolve) => {
+        setMessages((m) => {
+          const next = [...m, { role: "noor", text: "" }];
+          resolve(next.length - 1);
+          return next;
+        });
+      });
+      const words = full.split(/(\s+)/); // keep whitespace tokens
+      let acc = "";
+      for (const w of words) {
+        acc += w;
+        await new Promise((r) => setTimeout(r, 28));
+        // eslint-disable-next-line no-loop-func
+        setMessages((m) => {
+          const copy = [...m];
+          if (copy[idx]) copy[idx] = { role: "noor", text: acc };
+          return copy;
+        });
+      }
     } catch (e) {
       setMessages((m) => [...m, { role: "noor", text: "Noor is resting for a moment. Please try once more." }]);
     } finally {

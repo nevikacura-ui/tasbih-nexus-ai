@@ -17,6 +17,7 @@ import ProfilePage from "./pages/Profile";
 import InvitesPage from "./pages/Invites";
 import QuranPage, { RamadanPage } from "./pages/Quran";
 import RemindersPage from "./pages/Reminders";
+import ModerationPage from "./pages/Moderation";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/quran" element={<Protected><QuranPage /></Protected>} />
       <Route path="/ramadan" element={<Protected><RamadanPage /></Protected>} />
       <Route path="/reminders" element={<Protected><RemindersPage /></Protected>} />
+      <Route path="/moderation" element={<Protected><ModerationPage /></Protected>} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
       <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />
