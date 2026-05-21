@@ -203,6 +203,15 @@ The experience should feel:
 - ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
 - ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
 
+### Content sprint · Ginan, Dua, Family/ECDC (Feb 2026)
+- ✅ **Curated content module** at `/app/backend/content.py` — easy to edit/extend without touching server logic.
+- ✅ **Ginan library** (`/ginan`) — 12 starter ginans from Pir Hasan Kabirdin, Pir Sadardin, Pir Shams. Each has Gujarati script + transliteration + gentle English meaning + theme. Themes: remembrance, love, light, journey, surrender, service. Search + filter chips.
+- ✅ **Dua library** (`/dua`) — 20 short reflective duas in Arabic + transliteration + gentle English. Situations: morning, evening, anxiety, healing, gratitude, parents, travel, sleep, etc. Mix of traditional + personal.
+- ✅ **Family Corner** (`/family`) — 18 calm parenting prompts across 7 stages: Infant (0-2), Toddler (2-4), Early (4-7), Middle (7-11), Adolescent (11-15), Teen (15-18), Any age. Each has duration estimate + soft phrasing. Not clinical advice (disclaimer present).
+- ✅ All three pages: respectful disclaimer in the footer, "Reflect with Noor" CTA on detail modals, search + filter chips.
+- ✅ Profile rows added: `row-ginan` · `row-dua` · `row-family`.
+- ✅ **Credit line** added to Login footer + Profile footer: *Content curated with care by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India*.
+
 ### Launch polish (Feb 2026)
 - ✅ **Deep-link invite codes** — emails now use `/login?c1=...&c2=...`; Login parses URL params and pre-fills both codes. Two-tap registration from email to app.
 - ✅ **Privacy Policy** at `/privacy` (public, no auth) — plain-English data practices, third-party list (MSG91, Resend, Anthropic, Google Geocoding, OSM, alquran.cloud), user rights, children clause, Noor AI disclaimer.

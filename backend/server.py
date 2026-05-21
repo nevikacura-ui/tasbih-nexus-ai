@@ -2812,6 +2812,73 @@ async def calendar_month(year: int, month: int):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Curated content — Ginan, Dua, Family/ECDC
+# Source: /app/backend/content.py (curated by Naushad & Shabnam Patel)
+# ──────────────────────────────────────────────────────────────────────────────
+try:
+    from content import GINAN, DUA, FAMILY_CORNER  # type: ignore
+except Exception:
+    GINAN, DUA, FAMILY_CORNER = [], [], []
+
+
+@api.get("/ginan")
+async def list_ginan(theme: Optional[str] = None, q: Optional[str] = None):
+    items = list(GINAN)
+    if theme:
+        items = [g for g in items if g.get("theme") == theme]
+    if q:
+        q_ = q.lower()
+        items = [g for g in items if q_ in (g.get("title", "") + " " + g.get("english", "") + " " + g.get("pir", "")).lower()]
+    return {"ginan": items, "credit": "Curated by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India"}
+
+
+@api.get("/ginan/{ginan_id}")
+async def get_ginan(ginan_id: str):
+    for g in GINAN:
+        if g.get("id") == ginan_id:
+            return g
+    raise HTTPException(status_code=404, detail="Ginan not found")
+
+
+@api.get("/dua")
+async def list_dua(situation: Optional[str] = None, q: Optional[str] = None):
+    items = list(DUA)
+    if situation:
+        s_ = situation.lower()
+        items = [d for d in items if s_ in (d.get("situation", "") + " " + d.get("title", "")).lower()]
+    if q:
+        q_ = q.lower()
+        items = [d for d in items if q_ in (d.get("title", "") + " " + d.get("english", "") + " " + d.get("transliteration", "")).lower()]
+    return {"dua": items, "credit": "Curated by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India"}
+
+
+@api.get("/dua/{dua_id}")
+async def get_dua(dua_id: str):
+    for d in DUA:
+        if d.get("id") == dua_id:
+            return d
+    raise HTTPException(status_code=404, detail="Dua not found")
+
+
+@api.get("/family-corner")
+async def family_corner(stage: Optional[str] = None):
+    items = list(FAMILY_CORNER)
+    if stage:
+        items = [f for f in items if f.get("stage") == stage or f.get("stage") == "all"]
+    # Stages summary for the UI tabs
+    stage_meta = [
+        {"id": "infant", "label": "Infant · 0–2"},
+        {"id": "toddler", "label": "Toddler · 2–4"},
+        {"id": "early", "label": "Early · 4–7"},
+        {"id": "middle", "label": "Middle · 7–11"},
+        {"id": "adolescent", "label": "Adolescent · 11–15"},
+        {"id": "teen", "label": "Teen · 15–18"},
+        {"id": "all", "label": "Any age"},
+    ]
+    return {"prompts": items, "stages": stage_meta, "credit": "Curated by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Seeding
 # ──────────────────────────────────────────────────────────────────────────────
 async def seed_data():

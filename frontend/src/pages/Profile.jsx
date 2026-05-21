@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin, Compass, Building2 } from "lucide-react";
+import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin, Compass, Building2, Music, Heart, Baby } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { useAuth } from "../lib/auth";
@@ -86,6 +86,9 @@ export default function ProfilePage() {
 
         <section className="mt-6 space-y-2 px-5">
           <RowLink to="/sangat" icon={Compass} title="My Sangat" sub="Your spiritual passport — cities, mentors, khidmah" test="row-sangat" />
+          <RowLink to="/ginan" icon={Music} title="Ginan" sub="Devotional poetry — Pir Hasan Kabirdin, Sadardin, Shams" test="row-ginan" />
+          <RowLink to="/dua" icon={Heart} title="Dua" sub="Quiet whispered prayers for moments of the day" test="row-dua" />
+          <RowLink to="/family" icon={Baby} title="Family Corner" sub="Tiny parenting prompts by age stage" test="row-family" />
           <RowLink to="/orgs" icon={Building2} title="Organisations" sub="Directory · become an organisation" test="row-orgs" />
           {isAdmin && (
             <RowLink to="/admin" icon={ShieldCheck} title="Admin · Stewards" sub="Verify organisations · steward the calm" test="row-admin" />
@@ -139,6 +142,10 @@ export default function ProfilePage() {
             <span className="text-deep/20">·</span>
             <a href="mailto:hello@tasbih.ai" className="tap-scale">Contact</a>
           </div>
+          <p className="mt-3 px-2 text-center text-[10px] leading-relaxed text-deep/40" data-testid="profile-credit">
+            Content curated with care by <strong className="text-deep/55">Naushad & Shabnam Patel</strong><br />
+            Andheri Jamatkhana · Mumbai · India
+          </p>
         </section>
       </div>
     </MobileShell>

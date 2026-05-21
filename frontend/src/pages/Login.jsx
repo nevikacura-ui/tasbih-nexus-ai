@@ -302,6 +302,9 @@ export default function LoginPage() {
             <span className="text-deep/15">·</span>
             <a href="/terms" data-testid="login-terms">Terms</a>
           </div>
+          <p className="px-2 text-center text-[10px] leading-relaxed text-deep/35" data-testid="login-credit">
+            Curated with care by Naushad &amp; Shabnam Patel · Andheri Jamatkhana · Mumbai
+          </p>
         </section>
       </div>
     </div>

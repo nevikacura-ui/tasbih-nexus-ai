@@ -32,6 +32,9 @@ import StewardsPage from "./pages/Stewards";
 import PrivacyPage from "./pages/Privacy";
 import TermsPage from "./pages/Terms";
 import YearMosaicPage from "./pages/YearMosaic";
+import GinanPage from "./pages/Ginan";
+import DuaPage from "./pages/Dua";
+import FamilyPage from "./pages/Family";
 
 function Protected({ children }) {
   // Non-blocking: always render. Auth happens in background and pages handle
@@ -68,6 +71,9 @@ function Router() {
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="/stewards" element={<Protected><StewardsPage /></Protected>} />
       <Route path="/year-in-noor" element={<Protected><YearMosaicPage /></Protected>} />
+      <Route path="/ginan" element={<Protected><GinanPage /></Protected>} />
+      <Route path="/dua" element={<Protected><DuaPage /></Protected>} />
+      <Route path="/family" element={<Protected><FamilyPage /></Protected>} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
