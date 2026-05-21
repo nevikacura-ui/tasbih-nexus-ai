@@ -92,6 +92,9 @@ function ProfilePage() {
           <RowLink to="/guidelines" icon={ShieldCheck} title="Community Guidelines" sub="How we keep this circle calm and safe" />
           <RowLink to="/report" search={{ type: "user" as const, id: "" }} icon={Flag} title="Report something" sub="Confidential · reviewed by moderators" />
           {user && (
+            <RowLink to="/reports" icon={Clock} title="My reports" sub="Track status: received, reviewing, actioned" />
+          )}
+          {user && (
             <>
               <RowLink to="/moderation" icon={ShieldCheck} title="Moderation queue" sub="For moderators and admins" />
               <RowLink to="/admin/moderators" icon={Crown} title="Manage moderators" sub="Admins only · promote or demote" />

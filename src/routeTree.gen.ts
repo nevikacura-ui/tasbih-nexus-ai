@@ -21,6 +21,7 @@ import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated.reports'
 import { Route as AuthenticatedModerationRouteImport } from './routes/_authenticated.moderation'
 import { Route as AuthenticatedJoinRouteImport } from './routes/_authenticated.join'
 import { Route as AuthenticatedAdminModeratorsRouteImport } from './routes/_authenticated.admin.moderators'
@@ -84,6 +85,11 @@ const InviteCodeRoute = InviteCodeRouteImport.update({
   path: '/invite/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedModerationRoute = AuthenticatedModerationRouteImport.update({
   id: '/moderation',
   path: '/moderation',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
   '/moderation': typeof AuthenticatedModerationRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/invite/$code': typeof InviteCodeRoute
   '/admin/moderators': typeof AuthenticatedAdminModeratorsRoute
 }
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
   '/moderation': typeof AuthenticatedModerationRoute
+  '/reports': typeof AuthenticatedReportsRoute
   '/invite/$code': typeof InviteCodeRoute
   '/admin/moderators': typeof AuthenticatedAdminModeratorsRoute
 }
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/spiritual': typeof SpiritualRoute
   '/_authenticated/join': typeof AuthenticatedJoinRoute
   '/_authenticated/moderation': typeof AuthenticatedModerationRoute
+  '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/invite/$code': typeof InviteCodeRoute
   '/_authenticated/admin/moderators': typeof AuthenticatedAdminModeratorsRoute
 }
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
     | '/spiritual'
     | '/join'
     | '/moderation'
+    | '/reports'
     | '/invite/$code'
     | '/admin/moderators'
   fileRoutesByTo: FileRoutesByTo
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/spiritual'
     | '/join'
     | '/moderation'
+    | '/reports'
     | '/invite/$code'
     | '/admin/moderators'
   id:
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/spiritual'
     | '/_authenticated/join'
     | '/_authenticated/moderation'
+    | '/_authenticated/reports'
     | '/invite/$code'
     | '/_authenticated/admin/moderators'
   fileRoutesById: FileRoutesById
@@ -304,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/reports': {
+      id: '/_authenticated/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/moderation': {
       id: '/_authenticated/moderation'
       path: '/moderation'
@@ -331,12 +350,14 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteChildren {
   AuthenticatedJoinRoute: typeof AuthenticatedJoinRoute
   AuthenticatedModerationRoute: typeof AuthenticatedModerationRoute
+  AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedAdminModeratorsRoute: typeof AuthenticatedAdminModeratorsRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedJoinRoute: AuthenticatedJoinRoute,
   AuthenticatedModerationRoute: AuthenticatedModerationRoute,
+  AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedAdminModeratorsRoute: AuthenticatedAdminModeratorsRoute,
 }
 
