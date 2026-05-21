@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      moderator_actions: {
+        Row: {
+          action: Database["public"]["Enums"]["moderator_action"]
+          created_at: string
+          id: string
+          moderator_id: string
+          notes: string | null
+          report_id: string
+        }
+        Insert: {
+          action: Database["public"]["Enums"]["moderator_action"]
+          created_at?: string
+          id?: string
+          moderator_id: string
+          notes?: string | null
+          report_id: string
+        }
+        Update: {
+          action?: Database["public"]["Enums"]["moderator_action"]
+          created_at?: string
+          id?: string
+          moderator_id?: string
+          notes?: string | null
+          report_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "moderator_actions_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -74,6 +109,42 @@ export type Database = {
         }
         Relationships: []
       }
+      reports: {
+        Row: {
+          created_at: string
+          details: string | null
+          id: string
+          reason: Database["public"]["Enums"]["report_reason"]
+          reporter_id: string
+          status: Database["public"]["Enums"]["report_status"]
+          target_id: string
+          target_type: Database["public"]["Enums"]["report_target_type"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          details?: string | null
+          id?: string
+          reason: Database["public"]["Enums"]["report_reason"]
+          reporter_id: string
+          status?: Database["public"]["Enums"]["report_status"]
+          target_id: string
+          target_type: Database["public"]["Enums"]["report_target_type"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          details?: string | null
+          id?: string
+          reason?: Database["public"]["Enums"]["report_reason"]
+          reporter_id?: string
+          status?: Database["public"]["Enums"]["report_status"]
+          target_id?: string
+          target_type?: Database["public"]["Enums"]["report_target_type"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -108,11 +179,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_mod_or_admin: { Args: { _uid: string }; Returns: boolean }
       redeem_referral: { Args: { _code: string }; Returns: Json }
     }
     Enums: {
       app_role: "member" | "mentor" | "admin" | "moderator"
+      moderator_action: "warn" | "hide" | "remove" | "ban" | "dismiss" | "noop"
       profile_status: "explorer" | "member"
+      report_reason:
+        | "harassment"
+        | "hate_speech"
+        | "spam"
+        | "sexual_content"
+        | "self_harm"
+        | "misinformation"
+        | "impersonation"
+        | "privacy"
+        | "other"
+      report_status: "open" | "reviewing" | "resolved" | "dismissed"
+      report_target_type:
+        | "post"
+        | "comment"
+        | "user"
+        | "message"
+        | "community"
+        | "event"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -241,7 +332,28 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["member", "mentor", "admin", "moderator"],
+      moderator_action: ["warn", "hide", "remove", "ban", "dismiss", "noop"],
       profile_status: ["explorer", "member"],
+      report_reason: [
+        "harassment",
+        "hate_speech",
+        "spam",
+        "sexual_content",
+        "self_harm",
+        "misinformation",
+        "impersonation",
+        "privacy",
+        "other",
+      ],
+      report_status: ["open", "reviewing", "resolved", "dismissed"],
+      report_target_type: [
+        "post",
+        "comment",
+        "user",
+        "message",
+        "community",
+        "event",
+      ],
     },
   },
 } as const
