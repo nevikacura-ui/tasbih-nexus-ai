@@ -33,6 +33,7 @@ logging.basicConfig(level=logging.INFO)
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -1654,28 +1655,62 @@ async def _nominatim_lookup(query: str) -> Optional[dict]:
     if cached and cached.get("hit"):
         return cached.get("result")
     result = None
-    # Primary: Open-Meteo Geocoding (free, no key, generous limits)
-    try:
-        async with httpx.AsyncClient(timeout=10) as hc:
-            r = await hc.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={"name": q, "count": 1, "language": "en", "format": "json"},
-            )
-            r.raise_for_status()
-            data = r.json() or {}
-            arr = data.get("results") or []
-            if arr:
-                item = arr[0]
-                result = {
-                    "lat": float(item["latitude"]),
-                    "lng": float(item["longitude"]),
-                    "city": item.get("name") or q,
-                    "country": item.get("country") or "",
-                    "display_name": ", ".join([x for x in [item.get("name"), item.get("admin1"), item.get("country")] if x]),
-                }
-    except Exception as e:
-        logger.warning(f"open-meteo geocode failed: {e}")
-    # Fallback: Nominatim
+    # Primary: Google Geocoding API (most reliable, key-based)
+    if GOOGLE_MAPS_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10) as hc:
+                r = await hc.get(
+                    "https://maps.googleapis.com/maps/api/geocode/json",
+                    params={"address": q, "key": GOOGLE_MAPS_API_KEY, "language": "en"},
+                )
+                r.raise_for_status()
+                data = r.json() or {}
+                if data.get("status") == "OK" and data.get("results"):
+                    item = data["results"][0]
+                    loc = item.get("geometry", {}).get("location") or {}
+                    comps = item.get("address_components") or []
+                    city = ""
+                    country = ""
+                    for c in comps:
+                        types = c.get("types") or []
+                        if not city and ("locality" in types or "postal_town" in types or "administrative_area_level_2" in types):
+                            city = c.get("long_name") or ""
+                        if "country" in types:
+                            country = c.get("long_name") or ""
+                    result = {
+                        "lat": float(loc.get("lat")),
+                        "lng": float(loc.get("lng")),
+                        "city": city or q,
+                        "country": country,
+                        "display_name": item.get("formatted_address") or "",
+                    }
+                else:
+                    logger.warning(f"google geocode non-OK: {data.get('status')} {data.get('error_message','')}")
+        except Exception as e:
+            logger.warning(f"google geocode failed: {e}")
+    # Fallback 1: Open-Meteo Geocoding (free, no key)
+    if not result:
+        try:
+            async with httpx.AsyncClient(timeout=10) as hc:
+                r = await hc.get(
+                    "https://geocoding-api.open-meteo.com/v1/search",
+                    params={"name": q, "count": 1, "language": "en", "format": "json"},
+                )
+                r.raise_for_status()
+                data = r.json() or {}
+                arr = data.get("results") or []
+                if arr:
+                    item = arr[0]
+                    result = {
+                        "lat": float(item["latitude"]),
+                        "lng": float(item["longitude"]),
+                        "city": item.get("name") or q,
+                        "country": item.get("country") or "",
+                        "display_name": ", ".join([x for x in [item.get("name"), item.get("admin1"), item.get("country")] if x]),
+                    }
+        except Exception as e:
+            logger.warning(f"open-meteo geocode failed: {e}")
+    # Fallback 2: Nominatim
     if not result:
         try:
             async with httpx.AsyncClient(timeout=10) as hc:

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Flame, BookOpen, Crown, Calendar } from "lucide-react";
+import { ChevronLeft, Sparkles, Flame, BookOpen, Crown, Calendar, BookmarkPlus, Check } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
@@ -9,12 +9,31 @@ export default function NoorDigestPage() {
   const [digest, setDigest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => { (async () => {
     try { const r = await api.get("/noor/digest"); setDigest(r.data); }
     catch (e) { setErr(e?.response?.data?.detail || "Could not load your digest."); }
     finally { setLoading(false); }
   })(); }, []);
+
+  const saveToJournal = async () => {
+    if (!digest?.text) return;
+    setSaving(true);
+    try {
+      const week = digest.window_start?.slice(0, 10) || "";
+      await api.post("/journal", {
+        title: `Noor Digest · week of ${week}`,
+        body: digest.text,
+        mood: "reflective",
+        tags: ["noor-digest", ...(digest.themes || [])],
+      });
+      setSaved(true);
+    } catch (e) {
+      setErr(e?.response?.data?.detail || "Could not save.");
+    } finally { setSaving(false); }
+  };
 
   const stats = digest?.stats || {};
   return (
@@ -50,6 +69,21 @@ export default function NoorDigestPage() {
                   ))}
                 </div>
               )}
+              <button
+                data-testid="digest-save-to-journal"
+                onClick={saveToJournal}
+                disabled={saved || saving}
+                className={`mt-5 flex w-full items-center justify-center gap-2 rounded-full py-2.5 text-xs font-medium tap-scale transition ${
+                  saved ? "bg-emerald-gradient text-gold" : "bg-gold-gradient text-deep shadow-soft"
+                } disabled:opacity-70`}
+              >
+                {saved ? (<><Check className="h-3.5 w-3.5" /> Saved to your journal</>)
+                  : saving ? "Saving…"
+                  : (<><BookmarkPlus className="h-3.5 w-3.5" /> Save to journal</>)}
+              </button>
+              <p className="mt-2 px-1 text-center text-[10px] text-deep/45">
+                Keep your Sunday reflections in one quiet place — your private yearly mosaic.
+              </p>
             </div>
           )}
         </section>

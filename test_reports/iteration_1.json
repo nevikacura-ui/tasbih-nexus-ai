@@ -1,0 +1,36 @@
+{
+  "summary": "Full Phase 4 backend + frontend regression for Tasbih.ai. 16/16 pytest backend tests pass (guest auth, jamatkhanas count=146 + nearby sorted by distance_km, Orgs full CRUD lifecycle, Communities/Posts as_org, profile/city geocoding via Open-Meteo fallback for Karachi/Mumbai, profile/sangat returns all required keys with home_city lat/lng, Noor Digest shape + caching, Journal create, and regression for /health /auth/me /communities /noor/today /tasbih/state /notifications). Frontend e2e verified on mobile viewport (390x844) via Playwright: guest auto-login fires, Home renders home-digest-card, clicking navigates to /noor/digest where digest-save-to-journal button works and shows 'Saved to your journal', /sangat shows Leaflet map + stat tiles (tasbih/khidmah/circles/mentors) + 'Set your home city' CTA, /orgs shows 7 orgs-cat-* category chips + search input + org cards, /orgs/me renders Become-an-organisation form, /profile shows row-sangat and row-orgs row-links.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/noor/digest", "issue": "First call returns generated_at as ISO string with microsecond precision and '+00:00' suffix (e.g. '2026-05-21T15:32:41.966796+00:00'); second/cached call returns the same instant but truncated to Mongo millisecond precision without tz suffix ('2026-05-21T15:32:41.966000'). Same logical timestamp but inconsistent serialization — clients comparing string equality for cache detection will mismatch. Recommend normalizing datetime serialization (e.g. always ISO-8601 with Z suffix and ms precision) before returning."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/orgs/me Become-an-organisation form", "issues": ["Category select default value is 'Other' which is not in backend's allowed category list (spiritual/ecdc/empowerment/social_work/health/education). If a user accepts the default they may hit a 400 on save. Consider matching defaults to backend enum or pre-validating client-side."]},
+      {"screen": "Home (initial load)", "issues": ["Brief 401 spikes appear in console before guest auto-login completes — UI handles gracefully (auto-retry) but the unauthenticated probes are noisy. Consider deferring all data fetches until /api/auth/guest resolves."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_phase4.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Normalize /api/noor/digest generated_at serialization (always ISO-8601 with consistent precision and tz suffix) so the second cached response is bit-identical to the first.",
+    "Align /orgs/me category select default with backend-accepted enum (or remove 'Other' if not supported) to prevent 400 on save with default values.",
+    "Optional: gate Home data fetches behind guest auto-login completion to eliminate the 401 noise on first paint."
+  ],
+  "critical_code_review_comments": [
+    "server.py is a monolith — Orgs, Noor Digest, Sangat, City geocoding, Communities, Posts all live in one file. Consider splitting into routers/modules for maintainability (>700 line guideline).",
+    "Digest cache compares timestamps that round-trip through Mongo (ms precision) vs in-memory (μs precision) — store and return only ms-precision timestamps to avoid client-side cache-detection issues.",
+    "POST /api/communities/{id}/posts requires 'text' field; the schema/Pydantic name diverges from common 'body' convention used in /api/journal. Suggest unifying field naming across post-like endpoints for DX consistency."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase4.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% of tested flows"},
+  "test_credentials": "Guest auto-login via POST /api/auth/guest (no credentials). Token stored in localStorage on frontend and attached as Authorization: Bearer.",
+  "seed_data_creation": "Backend test classes created TEST_-prefixed org/community/post/journal records during the run; these were cleaned up post-run via mongosh deleteMany on TEST_ prefix and users.role rolled back to 'member'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression file is /app/backend/tests/test_phase4.py — runs in ~3s. The digest endpoint serialization quirk is the only real bug surfaced (timestamps differ by precision/tz suffix between fresh-generated and cached responses but represent the same instant). All Phase 4 features (Orgs, Sangat, City geocoding, Noor Digest, as_org posting) work end-to-end. Voice/video rooms were explicitly out of scope — not tested. INVITE_GATE_ENABLED is OFF — guest auth is the silent default path.",
+  "rca of the issue": "Digest generated_at mismatch RCA: on first request the handler builds the digest dict in-memory with datetime.now(timezone.utc).isoformat() (produces μs precision + '+00:00'), inserts into Mongo (which stores as BSON Date, ms precision, no tz), then returns the in-memory dict. On second request the cached doc is read back from Mongo and serialized — losing μs and '+00:00'. Fix: either (a) round the datetime to ms before insert AND format consistently in the returned dict, or (b) read back from Mongo after insert so both responses share the round-tripped representation."
+}
