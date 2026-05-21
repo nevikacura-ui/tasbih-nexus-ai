@@ -21,6 +21,7 @@ import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as AuthenticatedModerationRouteImport } from './routes/_authenticated.moderation'
 import { Route as AuthenticatedJoinRouteImport } from './routes/_authenticated.join'
 
 const SpiritualRoute = SpiritualRouteImport.update({
@@ -82,6 +83,11 @@ const InviteCodeRoute = InviteCodeRouteImport.update({
   path: '/invite/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedModerationRoute = AuthenticatedModerationRouteImport.update({
+  id: '/moderation',
+  path: '/moderation',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedJoinRoute = AuthenticatedJoinRouteImport.update({
   id: '/join',
   path: '/join',
@@ -100,6 +106,7 @@ export interface FileRoutesByFullPath {
   '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
+  '/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesByTo {
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
+  '/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesById {
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/_authenticated/join': typeof AuthenticatedJoinRoute
+  '/_authenticated/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRouteTypes {
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/spiritual'
     | '/join'
+    | '/moderation'
     | '/invite/$code'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/spiritual'
     | '/join'
+    | '/moderation'
     | '/invite/$code'
   id:
     | '__root__'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/report'
     | '/spiritual'
     | '/_authenticated/join'
+    | '/_authenticated/moderation'
     | '/invite/$code'
   fileRoutesById: FileRoutesById
 }
@@ -279,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/moderation': {
+      id: '/_authenticated/moderation'
+      path: '/moderation'
+      fullPath: '/moderation'
+      preLoaderRoute: typeof AuthenticatedModerationRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/join': {
       id: '/_authenticated/join'
       path: '/join'
@@ -291,10 +310,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedJoinRoute: typeof AuthenticatedJoinRoute
+  AuthenticatedModerationRoute: typeof AuthenticatedModerationRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedJoinRoute: AuthenticatedJoinRoute,
+  AuthenticatedModerationRoute: AuthenticatedModerationRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
