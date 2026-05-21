@@ -326,10 +326,16 @@ async def auth_me(user: User = Depends(current_user)):
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MSG91 WhatsApp OTP — phone+email registration after invite verify
-# Required env vars: MSG91_AUTH_KEY, MSG91_OTP_TEMPLATE_ID (created in MSG91 dashboard)
+# Uses MSG91's WhatsApp Outbound API with an approved Meta Authentication template
+# (`nevika_otp_verify`). We generate the OTP locally, store a hash with 10-minute
+# TTL, send via WhatsApp, and verify against our own hash. No OTP-section template
+# needed — it reuses the already-approved WhatsApp template.
+# Required env: MSG91_AUTH_KEY, MSG91_INTEGRATED_NUMBER (e.g. 918108888330),
+#              MSG91_WA_TEMPLATE (e.g. nevika_otp_verify)
 # ──────────────────────────────────────────────────────────────────────────────
 MSG91_AUTH_KEY = os.environ.get("MSG91_AUTH_KEY", "")
-MSG91_OTP_TEMPLATE_ID = os.environ.get("MSG91_OTP_TEMPLATE_ID", "")
+MSG91_INTEGRATED_NUMBER = os.environ.get("MSG91_INTEGRATED_NUMBER", "")
+MSG91_WA_TEMPLATE = os.environ.get("MSG91_WA_TEMPLATE", "")
 
 
 class OtpSendIn(BaseModel):
@@ -352,15 +358,68 @@ def _normalize_phone(p: str) -> str:
     return digits
 
 
+def _hash_otp(otp: str, phone: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"{otp}|{phone}|tasbih".encode()).hexdigest()
+
+
+async def _send_wa_otp_msg91(phone_e164_no_plus: str, otp: str) -> dict:
+    """Send a 6-digit OTP via MSG91 WhatsApp Outbound API using the
+    pre-approved Meta Authentication template `nevika_otp_verify`.
+    The template body is "{{1}} is your verification code..." with a Copy Code
+    button, so we pass the OTP both as body variable and as the button URL param.
+    """
+    if not (MSG91_AUTH_KEY and MSG91_INTEGRATED_NUMBER and MSG91_WA_TEMPLATE):
+        raise HTTPException(status_code=500, detail="WhatsApp OTP is not configured on the server.")
+    payload = {
+        "integrated_number": MSG91_INTEGRATED_NUMBER,
+        "content_type": "template",
+        "payload": {
+            "messaging_product": "whatsapp",
+            "type": "template",
+            "template": {
+                "name": MSG91_WA_TEMPLATE,
+                "language": {"code": "en", "policy": "deterministic"},
+                "namespace": None,
+                "to_and_components": [
+                    {
+                        "to": [phone_e164_no_plus],
+                        "components": {
+                            "body_1": {"type": "text", "value": otp},
+                            "button_1": {"subtype": "url", "type": "text", "value": otp},
+                        },
+                    }
+                ],
+            },
+        },
+    }
+    headers = {"authkey": MSG91_AUTH_KEY, "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.post(
+                "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",
+                json=payload, headers=headers,
+            )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+        if r.status_code >= 400 or str(data.get("status", "")).lower() == "error":
+            logger.warning(f"MSG91 WA send failed: status={r.status_code} body={data}")
+            detail = (data.get("message") if isinstance(data, dict) else None) or "Could not send WhatsApp OTP."
+            raise HTTPException(status_code=502, detail=str(detail))
+        logger.info(f"MSG91 WA OTP sent to {phone_e164_no_plus}: {data}")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"msg91 wa send exception: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach WhatsApp OTP service.")
+
+
 @api.post("/auth/otp/send")
 async def auth_otp_send(body: OtpSendIn):
-    """Send a 6-digit OTP via MSG91 (WhatsApp primary, SMS fallback).
-    Requires a still-valid pending_token from /invite/verify.
-    """
-    if not MSG91_AUTH_KEY:
-        raise HTTPException(status_code=500, detail="OTP service not configured (MSG91_AUTH_KEY missing).")
-    if not MSG91_OTP_TEMPLATE_ID:
-        raise HTTPException(status_code=500, detail="OTP service not configured (MSG91_OTP_TEMPLATE_ID missing).")
+    """Send a 6-digit OTP via WhatsApp using MSG91 + Meta-approved template."""
     email = (body.email or "").strip().lower()
     phone = _normalize_phone(body.phone)
     if "@" not in email or len(email) < 5:
@@ -370,73 +429,62 @@ async def auth_otp_send(body: OtpSendIn):
     pending = await db.pending_invites.find_one({"pending_token": body.pending_token}, {"_id": 0})
     if not pending:
         raise HTTPException(status_code=403, detail="Invitation expired. Please re-enter codes.")
-    # Already-registered email/phone? Allow login (no new account); we'll still verify OTP.
-    try:
-        async with httpx.AsyncClient(timeout=15) as hc:
-            r = await hc.post(
-                "https://control.msg91.com/api/v5/otp",
-                params={"mobile": phone, "authkey": MSG91_AUTH_KEY, "template_id": MSG91_OTP_TEMPLATE_ID},
-                headers={"Content-Type": "application/json"},
-            )
-        try:
-            data = r.json()
-        except Exception:
-            data = {"raw": r.text}
-        ok = r.status_code < 400 and "success" in str(data.get("type", "")).lower()
-        if not ok:
-            logger.warning(f"msg91 send failed: status={r.status_code} body={data}")
-            raise HTTPException(status_code=502, detail=f"Could not send OTP. {data.get('message') or 'Try again shortly.'}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"msg91 send exception: {e}")
-        raise HTTPException(status_code=502, detail="Could not reach OTP service. Try again.")
-    # Stash registration intent on the pending doc
+    # Generate + persist OTP (hashed) with 10-minute expiry
+    import secrets
+    otp = "".join(secrets.choice("0123456789") for _ in range(6))
+    now = datetime.now(timezone.utc)
+    await db.otp_codes.delete_many({"phone": phone})  # invalidate prior
+    await db.otp_codes.insert_one({
+        "phone": phone,
+        "email": email,
+        "otp_hash": _hash_otp(otp, phone),
+        "attempts": 0,
+        "created_at": now,
+        "expires_at": now + timedelta(minutes=10),
+    })
+    await _send_wa_otp_msg91(phone, otp)
     await db.pending_invites.update_one(
         {"pending_token": body.pending_token},
-        {"$set": {"email": email, "phone": phone, "otp_sent_at": datetime.now(timezone.utc)}},
+        {"$set": {"email": email, "phone": phone, "otp_sent_at": now}},
     )
-    return {"ok": True, "channel": "whatsapp", "sent_to": phone}
+    return {"ok": True, "channel": "whatsapp", "sent_to": phone, "expires_in_minutes": 10}
 
 
 @api.post("/auth/otp/verify")
 async def auth_otp_verify(body: OtpVerifyIn, response: Response):
-    """Verify the OTP with MSG91 and finalize registration with a 90-day session."""
-    if not MSG91_AUTH_KEY:
-        raise HTTPException(status_code=500, detail="OTP service not configured.")
+    """Verify the OTP against our hashed store and finalize registration (90-day session)."""
     email = (body.email or "").strip().lower()
     phone = _normalize_phone(body.phone)
     otp = (body.otp or "").strip()
-    if not otp or len(otp) < 4:
+    if len(otp) < 4 or len(otp) > 8:
         raise HTTPException(status_code=400, detail="Please enter the verification code.")
     pending = await db.pending_invites.find_one({"pending_token": body.pending_token}, {"_id": 0})
     if not pending:
         raise HTTPException(status_code=403, detail="Invitation expired. Please re-enter codes.")
-    # Verify OTP with MSG91
-    try:
-        async with httpx.AsyncClient(timeout=15) as hc:
-            r = await hc.get(
-                "https://control.msg91.com/api/v5/otp/verify",
-                params={"mobile": phone, "otp": otp, "authkey": MSG91_AUTH_KEY},
-            )
-        try:
-            data = r.json()
-        except Exception:
-            data = {"raw": r.text}
-    except Exception as e:
-        logger.warning(f"msg91 verify exception: {e}")
-        raise HTTPException(status_code=502, detail="Could not reach OTP service. Try again.")
-    if r.status_code >= 400 or "success" not in str(data.get("type", "")).lower():
-        msg = data.get("message") or "Invalid or expired code."
-        raise HTTPException(status_code=400, detail=str(msg))
+    rec = await db.otp_codes.find_one({"phone": phone}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=400, detail="No verification code found. Please request a new code.")
+    exp = rec.get("expires_at")
+    if isinstance(exp, str):
+        exp = datetime.fromisoformat(exp)
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < datetime.now(timezone.utc):
+        await db.otp_codes.delete_one({"phone": phone})
+        raise HTTPException(status_code=400, detail="That code expired. Please request a new one.")
+    if rec.get("attempts", 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please request a new code.")
+    import hmac
+    if not hmac.compare_digest(rec["otp_hash"], _hash_otp(otp, phone)):
+        await db.otp_codes.update_one({"phone": phone}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=400, detail="That code didn't match. Try again.")
 
-    # Confirm invite codes still valid + consume them on first registration
+    # Confirm invite codes still valid + consume on first registration
     codes = [pending.get("code1"), pending.get("code2")]
     code_docs = await db.invite_codes.find({"code": {"$in": codes}}, {"_id": 0}).to_list(length=10)
 
     user = await db.users.find_one({"$or": [{"email": email}, {"phone": phone}]}, {"_id": 0})
     if not user:
-        # New signup — codes must still be unused
         if len(code_docs) != 2 or any(c.get("used_by") for c in code_docs):
             raise HTTPException(status_code=403, detail="Invitation codes are no longer valid.")
         user_id = f"user_{uuid.uuid4().hex[:12]}"
@@ -467,6 +515,7 @@ async def auth_otp_verify(body: OtpVerifyIn, response: Response):
         "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
         "created_at": datetime.now(timezone.utc),
     })
+    await db.otp_codes.delete_one({"phone": phone})
     await db.pending_invites.delete_one({"pending_token": body.pending_token})
     response.set_cookie(
         key="session_token", value=session_token,
