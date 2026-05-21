@@ -9,8 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SpiritualRouteImport } from './routes/spiritual'
+import { Route as ReflectRouteImport } from './routes/reflect'
+import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as EventsRouteImport } from './routes/events'
+import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SpiritualRoute = SpiritualRouteImport.update({
+  id: '/spiritual',
+  path: '/spiritual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReflectRoute = ReflectRouteImport.update({
+  id: '/reflect',
+  path: '/reflect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EventsRoute = EventsRouteImport.update({
+  id: '/events',
+  path: '/events',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CommunitiesRoute = CommunitiesRouteImport.update({
+  id: '/communities',
+  path: '/communities',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -19,28 +49,96 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/communities': typeof CommunitiesRoute
+  '/events': typeof EventsRoute
+  '/profile': typeof ProfileRoute
+  '/reflect': typeof ReflectRoute
+  '/spiritual': typeof SpiritualRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/communities': typeof CommunitiesRoute
+  '/events': typeof EventsRoute
+  '/profile': typeof ProfileRoute
+  '/reflect': typeof ReflectRoute
+  '/spiritual': typeof SpiritualRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/communities': typeof CommunitiesRoute
+  '/events': typeof EventsRoute
+  '/profile': typeof ProfileRoute
+  '/reflect': typeof ReflectRoute
+  '/spiritual': typeof SpiritualRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/communities'
+    | '/events'
+    | '/profile'
+    | '/reflect'
+    | '/spiritual'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/communities' | '/events' | '/profile' | '/reflect' | '/spiritual'
+  id:
+    | '__root__'
+    | '/'
+    | '/communities'
+    | '/events'
+    | '/profile'
+    | '/reflect'
+    | '/spiritual'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CommunitiesRoute: typeof CommunitiesRoute
+  EventsRoute: typeof EventsRoute
+  ProfileRoute: typeof ProfileRoute
+  ReflectRoute: typeof ReflectRoute
+  SpiritualRoute: typeof SpiritualRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/spiritual': {
+      id: '/spiritual'
+      path: '/spiritual'
+      fullPath: '/spiritual'
+      preLoaderRoute: typeof SpiritualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reflect': {
+      id: '/reflect'
+      path: '/reflect'
+      fullPath: '/reflect'
+      preLoaderRoute: typeof ReflectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events': {
+      id: '/events'
+      path: '/events'
+      fullPath: '/events'
+      preLoaderRoute: typeof EventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/communities': {
+      id: '/communities'
+      path: '/communities'
+      fullPath: '/communities'
+      preLoaderRoute: typeof CommunitiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -53,6 +151,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CommunitiesRoute: CommunitiesRoute,
+  EventsRoute: EventsRoute,
+  ProfileRoute: ProfileRoute,
+  ReflectRoute: ReflectRoute,
+  SpiritualRoute: SpiritualRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
