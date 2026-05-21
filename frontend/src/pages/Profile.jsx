@@ -11,11 +11,18 @@ export default function ProfilePage() {
   const [tasbih, setTasbih] = useState({ today: 0, streak: 0, total: 0 });
   const [memberships, setMemberships] = useState([]);
   const [journalCount, setJournalCount] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => { (async () => {
     try {
-      const [t, m, j] = await Promise.all([api.get("/tasbih/state"), api.get("/memberships"), api.get("/journal")]);
+      const [t, m, j, a] = await Promise.all([
+        api.get("/tasbih/state"),
+        api.get("/memberships"),
+        api.get("/journal"),
+        api.get("/admin/me").catch(() => ({ data: { is_admin: false } })),
+      ]);
       setTasbih(t.data); setMemberships(m.data.memberships || []); setJournalCount((j.data.entries || []).length);
+      setIsAdmin(Boolean(a.data.is_admin));
     } catch (e) {}
   })(); }, []);
 
@@ -80,6 +87,9 @@ export default function ProfilePage() {
         <section className="mt-6 space-y-2 px-5">
           <RowLink to="/sangat" icon={Compass} title="My Sangat" sub="Your spiritual passport — cities, mentors, khidmah" test="row-sangat" />
           <RowLink to="/orgs" icon={Building2} title="Organisations" sub="Directory · become an organisation" test="row-orgs" />
+          {isAdmin && (
+            <RowLink to="/admin" icon={ShieldCheck} title="Admin · Stewards" sub="Verify organisations · steward the calm" test="row-admin" />
+          )}
           <RowLink to="/invites" icon={UserPlus} title="Invitations" sub="Welcome friends with grace" test="row-invites" />
           <RowLink to="/jamatkhana" icon={MapPin} title="Find your Jamatkhana" sub="Auto-locate or browse by country" test="row-jamatkhana" />
           <RowLink to="/notifications" icon={Bell} title="Notifications" sub="Mentorship updates, mod actions, recognition" test="row-notifications" />

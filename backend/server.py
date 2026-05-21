@@ -1569,6 +1569,64 @@ async def promote_moderator(email: str, user: User = Depends(current_user)):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Admin · Organisation verification
+# ──────────────────────────────────────────────────────────────────────────────
+def _require_admin(u: User):
+    if u.status != "admin" and u.email.lower() != "admin@tasbih.ai":
+        raise HTTPException(status_code=403, detail="Admins only")
+
+
+@api.get("/admin/me")
+async def admin_me(user: User = Depends(current_user)):
+    is_admin = user.status == "admin" or user.email.lower() == "admin@tasbih.ai"
+    return {"is_admin": is_admin}
+
+
+@api.get("/admin/orgs")
+async def admin_list_orgs(user: User = Depends(current_user)):
+    _require_admin(user)
+    users = await db.users.find({"role": "org", "org_profile": {"$ne": None}}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+    out = []
+    for u in users:
+        op = u.get("org_profile") or {}
+        out.append({
+            "org_id": u["user_id"],
+            "owner_email": u.get("email"),
+            "owner_name": u.get("name"),
+            "name": op.get("name") or "",
+            "tagline": op.get("tagline") or "",
+            "category": op.get("category") or "other",
+            "country": op.get("country") or "Global",
+            "city": op.get("city") or "Global",
+            "website": op.get("website") or "",
+            "verified": bool(op.get("verified")),
+            "created_at": u.get("created_at"),
+        })
+    return {"orgs": out}
+
+
+class AdminVerifyIn(BaseModel):
+    verified: bool
+
+
+@api.post("/admin/orgs/{org_id}/verify")
+async def admin_verify_org(org_id: str, body: AdminVerifyIn, user: User = Depends(current_user)):
+    _require_admin(user)
+    res = await db.users.update_one(
+        {"user_id": org_id, "role": "org"},
+        {"$set": {"org_profile.verified": bool(body.verified),
+                  "org_profile.verified_at": datetime.now(timezone.utc) if body.verified else None,
+                  "org_profile.verified_by": user.user_id if body.verified else None}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    # Cascade to circles + posts so badges update everywhere
+    await db.communities.update_many({"org_id": org_id}, {"$set": {"verified": bool(body.verified)}})
+    await db.chat_messages.update_many({"org_id": org_id}, {"$set": {"verified": bool(body.verified)}})
+    return {"ok": True, "org_id": org_id, "verified": bool(body.verified)}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Mentorship
 # ──────────────────────────────────────────────────────────────────────────────
 class MentorProfileIn(BaseModel):
