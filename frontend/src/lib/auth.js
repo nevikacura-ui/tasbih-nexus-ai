@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { api } from "./api";
+import { api, setStoredToken } from "./api";
 
 const AuthCtx = createContext(null);
 
@@ -24,10 +24,12 @@ export function AuthProvider({ children }) {
     bootstrapping.current = true;
     try {
       const r = await api.post("/auth/guest");
+      if (r.data.session_token) setStoredToken(r.data.session_token);
       setUser(r.data.user);
       return r.data.user;
-    } catch (_) {
-      return null;
+    } catch (e) {
+      console.error("ensureGuest failed", e);
+      throw e;
     } finally {
       bootstrapping.current = false;
     }
@@ -42,9 +44,8 @@ export function AuthProvider({ children }) {
     (async () => {
       const existing = await checkAuth();
       // Auto-create a silent guest session if user is not on /login and has no session.
-      // This lets visitors skip the login wall while keeping /login reachable for Google sign-in.
       if (!existing && window.location.pathname !== "/login") {
-        await ensureGuest();
+        try { await ensureGuest(); } catch (_) { /* swallow — Protected will show retry UI */ }
       }
       setLoading(false);
     })();
@@ -52,6 +53,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try { await api.post("/auth/logout"); } catch (_) {}
+    setStoredToken(null);
     setUser(null);
   };
 

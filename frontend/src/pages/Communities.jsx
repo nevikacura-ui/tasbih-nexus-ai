@@ -12,6 +12,7 @@ export default function CommunitiesPage() {
   const [memberships, setMemberships] = useState([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("All");
+  const [country, setCountry] = useState("All");
 
   const load = async () => {
     try {
@@ -28,7 +29,7 @@ export default function CommunitiesPage() {
   };
 
   const filtered = comms.filter((c) => {
-    const matchesQ = !q || (c.name + c.city + c.description).toLowerCase().includes(q.toLowerCase());
+    const matchesQ = !q || (c.name + c.city + (c.country || "") + c.description).toLowerCase().includes(q.toLowerCase());
     const matchesF =
       filter === "All" ||
       (filter === "Youth" && c.kind === "youth") ||
@@ -36,8 +37,11 @@ export default function CommunitiesPage() {
       (filter === "Mentorship" && c.kind === "mentorship") ||
       (filter === "Reflection" && c.kind === "reflection") ||
       (filter === "Family" && c.kind === "family");
-    return matchesQ && matchesF;
+    const matchesCountry = country === "All" || (c.country || "Global") === country;
+    return matchesQ && matchesF && matchesCountry;
   });
+
+  const countries = ["All", ...Array.from(new Set(comms.map((c) => c.country || "Global"))).sort()];
 
   return (
     <MobileShell>
@@ -76,6 +80,21 @@ export default function CommunitiesPage() {
                 }`}
               >
                 {f}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-2 flex gap-2 overflow-x-auto no-scrollbar pb-1" data-testid="country-filter">
+            {countries.map((c) => (
+              <button
+                key={c}
+                data-testid={`country-${c}`}
+                onClick={() => setCountry(c)}
+                className={`whitespace-nowrap rounded-full border px-3 py-1 text-[11px] tap-scale ${
+                  country === c ? "border-deep bg-deep text-ivory" : "border-deep/15 bg-white/60 text-deep/75"
+                }`}
+              >
+                {c}
               </button>
             ))}
           </div>

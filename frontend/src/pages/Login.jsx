@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sparkles, ShieldCheck, Key, ArrowRight } from "lucide-react";
-import { api } from "../lib/api";
+import { api, setStoredToken } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 
@@ -52,10 +52,12 @@ export default function LoginPage() {
     setErr(null);
     try {
       const r = await api.post("/auth/guest");
+      if (r.data.session_token) setStoredToken(r.data.session_token);
       setUser(r.data.user);
-      navigate("/onboarding", { replace: true });
+      navigate("/", { replace: true });
     } catch (e2) {
-      setErr("Could not start guest session.");
+      console.error("Guest signin failed", e2);
+      setErr(e2?.message || "Could not start guest session.");
     } finally {
       setBusy(false);
     }

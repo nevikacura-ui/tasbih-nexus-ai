@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, setStoredToken } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 export default function AuthCallback() {
@@ -20,9 +20,9 @@ export default function AuthCallback() {
     (async () => {
       try {
         const r = await api.post("/auth/session", { session_id: sid, pending_token: pending });
+        if (r.data.session_token) setStoredToken(r.data.session_token);
         sessionStorage.removeItem("pending_invite_token");
         setUser(r.data.user);
-        // Clear hash and navigate
         window.history.replaceState({}, "", window.location.pathname);
         const isNew = !!pending;
         navigate(isNew ? "/onboarding" : "/", { replace: true });
@@ -40,10 +40,7 @@ export default function AuthCallback() {
       {err && (
         <div data-testid="auth-error" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs text-red-700">
           {err}
-          <button
-            className="mt-2 block text-deep underline"
-            onClick={() => navigate("/login", { replace: true })}
-          >
+          <button className="mt-2 block text-deep underline" onClick={() => navigate("/login", { replace: true })}>
             Back to sign-in
           </button>
         </div>

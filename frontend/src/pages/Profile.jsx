@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users } from "lucide-react";
+import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { useAuth } from "../lib/auth";
@@ -79,6 +79,8 @@ export default function ProfilePage() {
 
         <section className="mt-6 space-y-2 px-5">
           <RowLink to="/invites" icon={UserPlus} title="Invitations" sub="Welcome friends with grace" test="row-invites" />
+          <RowLink to="/khidmah" icon={Crown} title="Khidmah leaderboard" sub="Soft recognition of service this month" test="row-khidmah" />
+          <RowLink to="/mentors" icon={GraduationCap} title="Mentorship" sub="Browse mentors · manage requests" test="row-mentors" />
           <RowLink to="/journal" icon={BookOpen} title="My journal" sub={`${journalCount} private entries`} test="row-journal" />
           <RowLink to="/tasbih" icon={Flame} title="Dhikr & streaks" sub={`${tasbih.streak ?? 0}-day streak`} test="row-tasbih" />
           <RowLink to="/reminders" icon={Bell} title="Reminders & Noor Nudges" sub="Soft in-app cues for prayer, dhikr & journaling" test="row-reminders" />

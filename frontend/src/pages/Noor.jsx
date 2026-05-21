@@ -1,20 +1,33 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Send, Sparkles, Globe } from "lucide-react";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
 
 const PROMPTS = ["I feel anxious", "Help me reflect", "Suggest a duʿā", "Gratitude prompt"];
 
+const LANGS = [
+  { id: "en", label: "EN", name: "English" },
+  { id: "ur", label: "اردو", name: "Urdu" },
+  { id: "ar", label: "العربية", name: "Arabic" },
+  { id: "fr", label: "FR", name: "French" },
+  { id: "gu", label: "ગુ", name: "Gujarati" },
+];
+
 export default function NoorPage() {
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [language, setLanguage] = useState(() => {
+    try { return localStorage.getItem("noor_lang") || "en"; } catch (_) { return "en"; }
+  });
+  const [showLang, setShowLang] = useState(false);
   const [messages, setMessages] = useState([
     { role: "noor", text: "As-salāmu ʿalaykum. Take a slow breath with me. What is sitting on your heart this evening?" },
   ]);
   const scrollRef = useRef(null);
 
+  useEffect(() => { try { localStorage.setItem("noor_lang", language); } catch (_) {} }, [language]);
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, busy]);
@@ -71,7 +84,31 @@ export default function NoorPage() {
         <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sand px-2.5 py-1 text-[10px] font-medium text-deep">
           <Sparkles className="h-3 w-3" /> calm mode
         </span>
+        <button
+          onClick={() => setShowLang((s) => !s)}
+          data-testid="lang-picker"
+          className="glass shadow-soft inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-deep tap-scale"
+        >
+          <Globe className="h-3 w-3" /> {LANGS.find((l) => l.id === language)?.label || "EN"}
+        </button>
       </header>
+
+      {showLang && (
+        <div className="mx-5 mt-2 grid grid-cols-5 gap-2" data-testid="lang-options">
+          {LANGS.map((l) => (
+            <button
+              key={l.id}
+              data-testid={`lang-${l.id}`}
+              onClick={() => { setLanguage(l.id); setShowLang(false); }}
+              className={`rounded-2xl py-2 text-[11px] font-medium tap-scale ${
+                language === l.id ? "bg-emerald-gradient text-ivory" : "glass text-deep shadow-soft"
+              }`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <p className="px-5 pt-2 text-[10px] text-deep/45">
         Reflective companion, not a religious authority. Noor will not give fatwas or theological rulings.

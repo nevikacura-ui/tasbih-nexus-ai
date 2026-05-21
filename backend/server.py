@@ -97,6 +97,7 @@ class TasbihSessionIn(BaseModel):
 class NoorChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    language: Optional[str] = "en"  # en | ur | ar | fr | gu
 
 
 class NoorChatResponse(BaseModel):
@@ -256,7 +257,7 @@ async def auth_session(request: Request, response: Response):
         samesite="none",
         path="/",
     )
-    return {"ok": True, "user": {k: user[k] for k in ("user_id", "email", "name", "picture", "status", "city") if k in user}}
+    return {"ok": True, "session_token": session_token, "user": {k: user[k] for k in ("user_id", "email", "name", "picture", "status", "city") if k in user}}
 
 
 @api.post("/auth/guest")
@@ -298,7 +299,11 @@ async def auth_guest(response: Response):
         samesite="none",
         path="/",
     )
-    return {"ok": True, "user": {k: user[k] for k in ("user_id", "email", "name", "picture", "status", "city")}}
+    return {
+        "ok": True,
+        "session_token": session_token,  # client stores this as fallback to the cookie
+        "user": {k: user[k] for k in ("user_id", "email", "name", "picture", "status", "city")},
+    }
 
 
 @api.get("/auth/me", response_model=User)
@@ -511,22 +516,30 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
         "user_id": user.user_id,
         "role": "user",
         "text": body.message,
+        "language": body.language or "en",
         "created_at": datetime.now(timezone.utc),
     })
+
+    lang_map = {
+        "en": ("English", ""),
+        "ur": ("Urdu (اردو)", "Respond in clear, gentle Urdu (in Urdu script). Use Roman Urdu only if the user explicitly writes in Roman Urdu."),
+        "ar": ("Arabic (العربية)", "Respond in fluent, warm Modern Standard Arabic (in Arabic script)."),
+        "fr": ("French (Français)", "Répondez en français doux et chaleureux."),
+        "gu": ("Gujarati (ગુજરાતી)", "Respond in gentle, warm Gujarati (in Gujarati script). Use simple, conversational vocabulary."),
+    }
+    lang_key = (body.language or "en").lower()
+    lang_name, lang_instruction = lang_map.get(lang_key, lang_map["en"])
+
+    system = NOOR_SYSTEM_PROMPT
+    if lang_instruction:
+        system = system + f"\n\nLanguage of the response: {lang_name}. {lang_instruction} Quranic verses may remain in Arabic followed by a soft translation in {lang_name}."
 
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=session_id,
-        system_message=NOOR_SYSTEM_PROMPT,
+        system_message=system,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
 
-    # Replay history into this fresh chat instance so the conversation feels continuous
-    history = await db.noor_messages.find(
-        {"session_id": session_id, "user_id": user.user_id},
-        {"_id": 0},
-    ).sort("created_at", 1).to_list(length=40)
-    # The LlmChat library tracks history on its own once we send a message; for stateless replay
-    # we instead just send the latest message — history persistence is for our own UI.
     try:
         reply = await chat.send_message(UserMessage(text=body.message))
     except Exception as e:
@@ -538,6 +551,7 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
         "user_id": user.user_id,
         "role": "noor",
         "text": reply,
+        "language": lang_key,
         "created_at": datetime.now(timezone.utc),
     })
     return NoorChatResponse(session_id=session_id, reply=reply)
@@ -1107,6 +1121,256 @@ async def promote_moderator(email: str, user: User = Depends(current_user)):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Mentorship
+# ──────────────────────────────────────────────────────────────────────────────
+class MentorProfileIn(BaseModel):
+    headline: str
+    bio: str
+    skills: List[str] = []
+    open_slots: int = 2
+    languages: List[str] = ["en"]
+
+
+class MentorshipRequestIn(BaseModel):
+    mentor_id: str
+    note: str
+
+
+@api.get("/mentors")
+async def list_mentors(skill: Optional[str] = None, city: Optional[str] = None):
+    q = {"open": True}
+    if skill:
+        q["skills"] = skill
+    items = await db.mentor_profiles.find(q, {"_id": 0}).sort("created_at", -1).to_list(length=100)
+    # Enrich with user info
+    user_ids = [m["user_id"] for m in items]
+    users = await db.users.find({"user_id": {"$in": user_ids}}, {"_id": 0, "user_id": 1, "name": 1, "city": 1}).to_list(length=200)
+    by_id = {u["user_id"]: u for u in users}
+    out = []
+    for m in items:
+        u = by_id.get(m["user_id"], {})
+        if city and (u.get("city") or "").lower() != city.lower():
+            continue
+        out.append({**m, "name": u.get("name"), "city": u.get("city")})
+    return {"mentors": out}
+
+
+@api.get("/mentors/me")
+async def my_mentor_profile(user: User = Depends(current_user)):
+    m = await db.mentor_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    return {"profile": m}
+
+
+@api.post("/mentors/me")
+async def upsert_mentor_profile(body: MentorProfileIn, user: User = Depends(current_user)):
+    doc = {
+        "user_id": user.user_id,
+        "headline": body.headline.strip()[:140],
+        "bio": body.bio.strip()[:1200],
+        "skills": [s.strip().lower() for s in body.skills if s.strip()][:12],
+        "open_slots": max(0, min(10, body.open_slots)),
+        "languages": body.languages or ["en"],
+        "open": body.open_slots > 0,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    existing = await db.mentor_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
+    if not existing:
+        doc["created_at"] = datetime.now(timezone.utc)
+    await db.mentor_profiles.update_one(
+        {"user_id": user.user_id},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api.delete("/mentors/me")
+async def delete_mentor_profile(user: User = Depends(current_user)):
+    await db.mentor_profiles.delete_one({"user_id": user.user_id})
+    return {"ok": True}
+
+
+@api.post("/mentorship/request")
+async def request_mentorship(body: MentorshipRequestIn, user: User = Depends(current_user)):
+    if body.mentor_id == user.user_id:
+        raise HTTPException(status_code=400, detail="You cannot request yourself.")
+    mentor = await db.mentor_profiles.find_one({"user_id": body.mentor_id}, {"_id": 0})
+    if not mentor or not mentor.get("open"):
+        raise HTTPException(status_code=404, detail="Mentor is not accepting requests.")
+    if mentor.get("open_slots", 0) <= 0:
+        raise HTTPException(status_code=400, detail="Mentor has no open spots.")
+    # Prevent duplicate open requests
+    existing = await db.mentorship_requests.find_one({
+        "mentor_id": body.mentor_id, "mentee_id": user.user_id, "status": "pending"
+    }, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="You already have a pending request with this mentor.")
+    req = {
+        "request_id": f"req_{uuid.uuid4().hex[:12]}",
+        "mentor_id": body.mentor_id,
+        "mentee_id": user.user_id,
+        "mentee_name": user.name,
+        "note": body.note.strip()[:600],
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.mentorship_requests.insert_one(dict(req))
+    return req
+
+
+@api.get("/mentorship/requests")
+async def my_requests(user: User = Depends(current_user)):
+    sent = await db.mentorship_requests.find({"mentee_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
+    received = await db.mentorship_requests.find({"mentor_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
+    # Enrich sent with mentor name
+    mentor_ids = [r["mentor_id"] for r in sent]
+    mentor_users = await db.users.find({"user_id": {"$in": mentor_ids}}, {"_id": 0}).to_list(length=200)
+    by_id = {u["user_id"]: u for u in mentor_users}
+    for r in sent:
+        r["mentor_name"] = (by_id.get(r["mentor_id"]) or {}).get("name")
+    return {"sent": sent, "received": received}
+
+
+@api.patch("/mentorship/requests/{rid}")
+async def update_request(rid: str, action: str = Query(...), user: User = Depends(current_user)):
+    r = await db.mentorship_requests.find_one({"request_id": rid}, {"_id": 0})
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if r["mentor_id"] != user.user_id:
+        raise HTTPException(status_code=403, detail="Only the mentor can update this request.")
+    if action not in {"accept", "decline"}:
+        raise HTTPException(status_code=400, detail="Invalid action.")
+    new_status = "accepted" if action == "accept" else "declined"
+    await db.mentorship_requests.update_one(
+        {"request_id": rid},
+        {"$set": {"status": new_status, "responded_at": datetime.now(timezone.utc)}},
+    )
+    if action == "accept":
+        await db.mentor_profiles.update_one(
+            {"user_id": user.user_id},
+            {"$inc": {"open_slots": -1}},
+        )
+    return {"ok": True, "status": new_status}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Hierarchical circles (countries → cities → circles)
+# ──────────────────────────────────────────────────────────────────────────────
+@api.get("/circles/hierarchy")
+async def circles_hierarchy():
+    items = await db.communities.find({}, {"_id": 0}).to_list(length=400)
+    tree: Dict[str, Dict[str, List[dict]]] = {}
+    for c in items:
+        country = c.get("country") or "Global"
+        city = c.get("city") or "Global"
+        tree.setdefault(country, {}).setdefault(city, []).append(c)
+    # Shape into list-of-list for easy rendering
+    out = []
+    for country, cities in tree.items():
+        c_block = {"country": country, "cities": []}
+        for city, circles in cities.items():
+            c_block["cities"].append({"city": city, "circles": circles})
+        out.append(c_block)
+    return {"tree": out}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Khidmah Leaderboard — soft monthly recognition of service
+# ──────────────────────────────────────────────────────────────────────────────
+KHIDMAH_RULES = {
+    "volunteer_rsvp": 3,        # RSVP to an event tagged "Volunteer"
+    "post_with_likes": 1,       # Each post that received ≥1 like
+    "kind_comment": 2,          # Comment ≥60 chars (assumed thoughtful)
+    "mentorship_accepted_mentor": 5,
+    "mentorship_accepted_mentee": 3,
+}
+
+
+def _month_window(year: int, month: int):
+    start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    return start, end
+
+
+@api.get("/khidmah/leaderboard")
+async def khidmah_leaderboard(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    user: User = Depends(current_user),
+):
+    now = datetime.now(timezone.utc)
+    y = year or now.year
+    m = month or now.month
+    start, end = _month_window(y, m)
+
+    scores: Dict[str, dict] = {}
+
+    def bump(uid: str, name: str, reason: str, weight: int):
+        s = scores.setdefault(uid, {"user_id": uid, "name": name, "points": 0, "breakdown": {}})
+        s["points"] += weight
+        s["breakdown"][reason] = s["breakdown"].get(reason, 0) + weight
+
+    # 1) Volunteer RSVPs in window
+    vol_event_ids = [e["event_id"] for e in await db.events.find({"tag": "Volunteer"}, {"_id": 0, "event_id": 1}).to_list(length=200)]
+    if vol_event_ids:
+        rsvps = await db.rsvps.find({"event_id": {"$in": vol_event_ids}, "rsvp_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=2000)
+        uids = list({r["user_id"] for r in rsvps})
+        users_map = {u["user_id"]: u for u in await db.users.find({"user_id": {"$in": uids}}, {"_id": 0}).to_list(length=2000)}
+        for r in rsvps:
+            u = users_map.get(r["user_id"])
+            if not u: continue
+            bump(u["user_id"], u["name"], "volunteer_rsvp", KHIDMAH_RULES["volunteer_rsvp"])
+
+    # 2) Posts that received at least one like (post created in window)
+    posts = await db.posts.find({"created_at": {"$gte": start, "$lt": end}, "likes": {"$gte": 1}}, {"_id": 0}).to_list(length=2000)
+    for p in posts:
+        bump(p["user_id"], p.get("author_name") or "Member", "post_with_likes", KHIDMAH_RULES["post_with_likes"])
+
+    # 3) Kind comments — comment longer than 60 chars
+    comments = await db.comments.find({"created_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=5000)
+    for c in comments:
+        if len(c.get("text") or "") >= 60:
+            bump(c["user_id"], c.get("author_name") or "Member", "kind_comment", KHIDMAH_RULES["kind_comment"])
+
+    # 4) Mentorship accepted — both mentor and mentee
+    accepted = await db.mentorship_requests.find({"status": "accepted", "responded_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=2000)
+    mentor_ids = list({a["mentor_id"] for a in accepted})
+    mentee_ids = list({a["mentee_id"] for a in accepted})
+    all_ids = list({*mentor_ids, *mentee_ids})
+    users_map = {u["user_id"]: u for u in await db.users.find({"user_id": {"$in": all_ids}}, {"_id": 0}).to_list(length=2000)}
+    for a in accepted:
+        mn = users_map.get(a["mentor_id"])
+        if mn:
+            bump(mn["user_id"], mn["name"], "mentorship_accepted_mentor", KHIDMAH_RULES["mentorship_accepted_mentor"])
+        me = users_map.get(a["mentee_id"])
+        if me:
+            bump(me["user_id"], me["name"], "mentorship_accepted_mentee", KHIDMAH_RULES["mentorship_accepted_mentee"])
+
+    board = sorted(scores.values(), key=lambda s: s["points"], reverse=True)
+    # Rank
+    for i, s in enumerate(board):
+        s["rank"] = i + 1
+
+    my_entry = next((s for s in board if s["user_id"] == user.user_id), {
+        "user_id": user.user_id, "name": user.name, "points": 0, "breakdown": {}, "rank": None,
+    })
+
+    return {
+        "year": y,
+        "month": m,
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "rules": KHIDMAH_RULES,
+        "leaders": board[:25],
+        "you": my_entry,
+        "total_participants": len(board),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Seeding
 # ──────────────────────────────────────────────────────────────────────────────
 async def seed_data():
@@ -1127,25 +1391,38 @@ async def seed_data():
 
     if await db.communities.count_documents({}) == 0:
         await db.communities.insert_many([
-            {"community_id": "c_toronto_youth", "name": "Toronto Youth Circle", "city": "Toronto",
+            {"community_id": "c_toronto_youth", "name": "Toronto Youth Circle", "city": "Toronto", "country": "Canada",
              "members": 412, "description": "Sunday halqas, hiking, late-night chai conversations.",
              "kind": "youth"},
-            {"community_id": "c_noor_global", "name": "Noor Reflection Group", "city": "Global",
+            {"community_id": "c_noor_global", "name": "Noor Reflection Group", "city": "Global", "country": "Global",
              "members": 1248, "description": "Weekly reflection prompts and journaling threads.",
              "kind": "reflection"},
-            {"community_id": "c_mumbai_vol", "name": "Mumbai Volunteers", "city": "Mumbai",
+            {"community_id": "c_mumbai_vol", "name": "Mumbai Volunteers", "city": "Mumbai", "country": "India",
              "members": 287, "description": "Iftar drives, blood donation camps, education support.",
              "kind": "volunteers"},
-            {"community_id": "c_founders", "name": "Founders & Creators", "city": "Global",
+            {"community_id": "c_founders", "name": "Founders & Creators", "city": "Global", "country": "Global",
              "members": 533, "description": "A quiet network of Ismaili builders and storytellers.",
              "kind": "network"},
-            {"community_id": "c_seva", "name": "Seva Mentors", "city": "Karachi",
+            {"community_id": "c_seva", "name": "Seva Mentors", "city": "Karachi", "country": "Pakistan",
              "members": 198, "description": "Mentorship inspired by the ethics of service and pluralism.",
              "kind": "mentorship"},
-            {"community_id": "c_london_families", "name": "London Families", "city": "London",
+            {"community_id": "c_london_families", "name": "London Families", "city": "London", "country": "United Kingdom",
              "members": 145, "description": "Family halqas, picnics, and parenting circles.",
              "kind": "family"},
+            {"community_id": "c_dubai_youth", "name": "Dubai Youth Circle", "city": "Dubai", "country": "UAE",
+             "members": 256, "description": "Beach halqas, study groups, and quiet evening reflections.",
+             "kind": "youth"},
+            {"community_id": "c_paris_reflection", "name": "Cercle Paris", "city": "Paris", "country": "France",
+             "members": 89, "description": "Réflexions en français, soirées Noor mensuelles.",
+             "kind": "reflection"},
         ])
+    else:
+        # Backfill country field for older seeded docs
+        await db.communities.update_many({"country": {"$exists": False}, "city": "Toronto"}, {"$set": {"country": "Canada"}})
+        await db.communities.update_many({"country": {"$exists": False}, "city": "Mumbai"}, {"$set": {"country": "India"}})
+        await db.communities.update_many({"country": {"$exists": False}, "city": "Karachi"}, {"$set": {"country": "Pakistan"}})
+        await db.communities.update_many({"country": {"$exists": False}, "city": "London"}, {"$set": {"country": "United Kingdom"}})
+        await db.communities.update_many({"country": {"$exists": False}, "city": "Global"}, {"$set": {"country": "Global"}})
 
     if await db.events.count_documents({}) == 0:
         await db.events.insert_many([
@@ -1170,6 +1447,49 @@ async def seed_data():
              "tag": "Volunteer", "going": 58, "featured": False,
              "description": "Cook, serve and share — six spots left."},
         ])
+
+    if await db.mentor_profiles.count_documents({}) == 0:
+        # Seed mentor users + profiles
+        sample_mentors = [
+            {"user_id": "m_sana", "name": "Dr. Sana", "email": "sana@tasbih.ai", "city": "Toronto",
+             "headline": "Pediatrician · open to first-generation pre-meds",
+             "bio": "Twenty years in pediatrics. I love supporting students who are first-generation in medicine. Happy to talk about MCAT, residency, and balancing faith with long hospital nights.",
+             "skills": ["medicine", "career", "youth"]},
+            {"user_id": "m_hamza", "name": "Hamza Karim", "email": "hamza@tasbih.ai", "city": "Dubai",
+             "headline": "SaaS founder · helping new builders ship",
+             "bio": "Founded two SaaS companies (one acquired). I mentor Muslim builders 1:1 — product, fundraising, hiring, and the quieter side of staying spiritually grounded while building.",
+             "skills": ["startup", "product", "fundraising"]},
+            {"user_id": "m_ayesha", "name": "Ayesha Devji", "email": "ayesha@tasbih.ai", "city": "London",
+             "headline": "Senior designer · Figma, accessibility, portfolios",
+             "bio": "Design lead at a fintech. I review portfolios, do mock interviews, and help newer designers find a craft they love. Particularly happy to mentor women entering tech.",
+             "skills": ["design", "ux", "career"]},
+            {"user_id": "m_yusuf", "name": "Yusuf Damji", "email": "yusuf@tasbih.ai", "city": "Karachi",
+             "headline": "Teacher · ECDC educators network",
+             "bio": "Twelve years teaching. I help newer educators find their voice, plan curricula, and bring spiritual grounding into the classroom in a respectful, non-authoritative way.",
+             "skills": ["education", "teaching", "family"]},
+        ]
+        for m in sample_mentors:
+            await db.users.update_one(
+                {"user_id": m["user_id"]},
+                {"$set": {
+                    "user_id": m["user_id"], "name": m["name"], "email": m["email"],
+                    "picture": None, "status": "member", "city": m["city"],
+                    "invite_codes_used": [], "referrals_received": 2, "invites_available": 3,
+                    "created_at": datetime.now(timezone.utc),
+                }},
+                upsert=True,
+            )
+            await db.mentor_profiles.insert_one({
+                "user_id": m["user_id"],
+                "headline": m["headline"],
+                "bio": m["bio"],
+                "skills": m["skills"],
+                "open_slots": 2,
+                "languages": ["en"],
+                "open": True,
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            })
 
     if await db.reflections.count_documents({}) == 0:
         await db.reflections.insert_many([

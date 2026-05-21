@@ -112,12 +112,43 @@ The experience should feel:
 - ✅ Sign out
 - ✅ Non-authority disclaimer
 
-### Moderation & Trust
-- ✅ **Report any post, comment, or chat message** (inline flag button)
-- ✅ Backend report queue (`/api/reports`) gated to `moderator`/`admin` roles
-- ✅ **Moderation page** for moderators — Open / Resolved / All tabs
-- ✅ Two-action workflow per report: **Dismiss** or **Remove content** (soft-removes target)
-- ✅ Admin promote endpoint (`POST /api/admin/promote`)
+### Mentorship (Phase 3)
+- ✅ Browse mentors with skill filter chips
+- ✅ Seeded mentor profiles (Dr. Sana · medicine, Hamza · startup, Ayesha · design, Yusuf · education)
+- ✅ Mentor profile detail sheet (bio + skills + slots remaining)
+- ✅ Send mentorship request with personal note
+- ✅ Requests tab (sent + received) with Accept / Decline workflow for mentors
+- ✅ Auto-decrements open slots on acceptance
+
+### Hierarchical circles (Phase 3)
+- ✅ Communities now have `country` field
+- ✅ Circles page has a second filter row: **All · Canada · Global · India · Pakistan · UK · UAE · France**
+- ✅ Hierarchy endpoint `/api/circles/hierarchy` returns country → city → circles tree
+- ✅ Seeded 2 new global circles (Dubai Youth, Cercle Paris)
+
+### Multilingual Noor (Phase 4)
+- ✅ Language picker (Globe icon) on Noor page
+- ✅ 5 supported languages: **English · Urdu (اردو) · Arabic (العربية) · French · Gujarati (ગુજરાતી)**
+- ✅ System prompt dynamically adds the response-language instruction
+- ✅ Quranic verses remain in Arabic with soft translation in selected language
+- ✅ Preference saved to localStorage per device
+
+### Khidmah Leaderboard (smart engagement)
+- ✅ Soft, **service-only** scoring (not vanity metrics):
+  - Volunteer RSVPs +3
+  - Loved posts +1
+  - Kind comments (≥60 chars) +2
+  - Mentorship offered (mentor) +5
+  - Mentorship received (mentee) +3
+- ✅ Monthly window with **Prev / Next** navigation
+- ✅ "Your khidmah" hero with point total, rank, and breakdown chips
+- ✅ Top-25 leaderboard with crown badge for #1
+- ✅ Rules card so members know exactly how to earn (encourages real-world acts, not posting)
+
+### Auth resilience
+- ✅ **Cookie + localStorage token dual fallback** — guest endpoint returns `session_token` in JSON body, frontend stores it, axios interceptor attaches it as `Authorization: Bearer …` on every request. Works even when mobile browsers block cookies.
+- ✅ "Continue as guest" recovery screen with retry + actual error surfacing
+- ✅ Auth gate flag `INVITE_GATE_ENABLED` still **off** for free testing
 
 ### Splash + brand
 - ✅ Cinematic full-screen **splash on first session** (user-supplied art)
