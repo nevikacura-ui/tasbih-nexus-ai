@@ -1,7 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { MobileShell } from "@/components/MobileShell";
 import { NoorBackdrop } from "@/components/NoorBackdrop";
-import { Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight, LogIn, LogOut, Lock } from "lucide-react";
+import {
+  Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight,
+  LogIn, LogOut, ShieldCheck, Flag,
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/profile")({
@@ -15,6 +18,18 @@ export const Route = createFileRoute("/profile")({
 });
 
 function ProfilePage() {
+  const { user, profile, loading, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate({ to: "/" });
+  };
+
+  const displayName = profile?.display_name || user?.email?.split("@")[0] || "Friend";
+  const initial = displayName.charAt(0).toUpperCase();
+  const isMember = profile?.status === "member";
+
   return (
     <MobileShell>
       <div className="relative">
@@ -22,7 +37,7 @@ function ProfilePage() {
         <header className="flex items-start justify-between px-5 pt-8">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Profile</p>
-            <h1 className="mt-1 font-display text-2xl text-foreground">Amir Karimov</h1>
+            <h1 className="mt-1 font-display text-2xl text-foreground">{displayName}</h1>
           </div>
           <Link to="/reminders" className="glass shadow-soft flex h-10 w-10 items-center justify-center rounded-full">
             <Settings className="h-4 w-4 text-foreground" />
@@ -33,11 +48,19 @@ function ProfilePage() {
           <div className="glass shadow-elegant rounded-3xl p-5">
             <div className="flex items-center gap-4">
               <div className="bg-gold-gradient noor-ring text-deep flex h-16 w-16 items-center justify-center rounded-full font-display text-2xl">
-                A
+                {initial}
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-foreground">Toronto · Joined 2024</p>
-                <p className="text-xs text-muted-foreground">Member · Mentor · Volunteer</p>
+                <p className="text-sm font-medium text-foreground">
+                  {profile?.city || (user ? "Add your city" : "Explore mode")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {user
+                    ? isMember
+                      ? "Member · Community access unlocked"
+                      : `Explorer · ${profile?.referrals_received ?? 0}/2 referrals`
+                    : "Sign in to begin your journey"}
+                </p>
               </div>
             </div>
 
@@ -64,20 +87,13 @@ function ProfilePage() {
           </div>
         </section>
 
-        <section className="mt-6 px-5">
-          <Link
-            to="/reminders"
-            className="glass flex items-center gap-3 rounded-2xl p-4 shadow-soft transition-transform active:scale-[0.98]"
-          >
-            <div className="bg-gold-gradient flex h-10 w-10 items-center justify-center rounded-full">
-              <Bell className="h-4 w-4 text-deep" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">Reminders & Noor Nudges</p>
-              <p className="text-[11px] text-muted-foreground">Customize prayers, daily nudges, quiet hours</p>
-            </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </Link>
+        <section className="mt-6 space-y-2 px-5">
+          <RowLink to="/reminders" icon={Bell} title="Reminders & Noor Nudges" sub="Customize prayers, daily nudges, quiet hours" />
+          <RowLink to="/guidelines" icon={ShieldCheck} title="Community Guidelines" sub="How we keep this circle calm and safe" />
+          <RowLink to="/report" search={{ type: "user" as const, id: "" }} icon={Flag} title="Report something" sub="Confidential · reviewed by moderators" />
+          {user && (
+            <RowLink to="/_authenticated/moderation" icon={ShieldCheck} title="Moderation queue" sub="For moderators and admins" />
+          )}
         </section>
 
         <section className="mt-6 px-5">
@@ -97,6 +113,24 @@ function ProfilePage() {
             ))}
           </div>
         </section>
+
+        <section className="mt-6 px-5 pb-6">
+          {loading ? null : user ? (
+            <button
+              onClick={handleSignOut}
+              className="glass flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-medium text-foreground shadow-soft transition-transform active:scale-[0.98]"
+            >
+              <LogOut className="h-4 w-4" /> Sign out
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              className="bg-emerald-gradient text-primary-foreground shadow-elegant flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-medium transition-transform active:scale-[0.98]"
+            >
+              <LogIn className="h-4 w-4" /> Sign in with Google
+            </Link>
+          )}
+        </section>
       </div>
     </MobileShell>
   );
@@ -108,6 +142,33 @@ function Metric({ value, label }: { value: string; label: string }) {
       <p className="font-display text-xl text-foreground">{value}</p>
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
     </div>
+  );
+}
+
+type RowLinkProps = {
+  to: string;
+  icon: typeof Bell;
+  title: string;
+  sub: string;
+  search?: Record<string, unknown>;
+};
+
+function RowLink({ to, icon: Icon, title, sub, search }: RowLinkProps) {
+  return (
+    <Link
+      to={to as any}
+      search={search as any}
+      className="glass flex items-center gap-3 rounded-2xl p-4 shadow-soft transition-transform active:scale-[0.98]"
+    >
+      <div className="bg-gold-gradient flex h-10 w-10 items-center justify-center rounded-full">
+        <Icon className="h-4 w-4 text-deep" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="text-[11px] text-muted-foreground">{sub}</p>
+      </div>
+      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+    </Link>
   );
 }
 

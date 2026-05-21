@@ -10,20 +10,28 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpiritualRouteImport } from './routes/spiritual'
+import { Route as ReportRouteImport } from './routes/report'
 import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ReflectRouteImport } from './routes/reflect'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as GuidelinesRouteImport } from './routes/guidelines'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as AuthenticatedModerationRouteImport } from './routes/_authenticated.moderation'
 import { Route as AuthenticatedJoinRouteImport } from './routes/_authenticated.join'
 
 const SpiritualRoute = SpiritualRouteImport.update({
   id: '/spiritual',
   path: '/spiritual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportRoute = ReportRouteImport.update({
+  id: '/report',
+  path: '/report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RemindersRoute = RemindersRouteImport.update({
@@ -44,6 +52,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidelinesRoute = GuidelinesRouteImport.update({
+  id: '/guidelines',
+  path: '/guidelines',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsRoute = EventsRouteImport.update({
@@ -70,6 +83,11 @@ const InviteCodeRoute = InviteCodeRouteImport.update({
   path: '/invite/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedModerationRoute = AuthenticatedModerationRouteImport.update({
+  id: '/moderation',
+  path: '/moderation',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedJoinRoute = AuthenticatedJoinRouteImport.update({
   id: '/join',
   path: '/join',
@@ -80,24 +98,30 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
+  '/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/join': typeof AuthenticatedJoinRoute
+  '/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRoutesById {
@@ -106,12 +130,15 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
   '/reminders': typeof RemindersRoute
+  '/report': typeof ReportRoute
   '/spiritual': typeof SpiritualRoute
   '/_authenticated/join': typeof AuthenticatedJoinRoute
+  '/_authenticated/moderation': typeof AuthenticatedModerationRoute
   '/invite/$code': typeof InviteCodeRoute
 }
 export interface FileRouteTypes {
@@ -120,24 +147,30 @@ export interface FileRouteTypes {
     | '/'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/join'
+    | '/moderation'
     | '/invite/$code'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/join'
+    | '/moderation'
     | '/invite/$code'
   id:
     | '__root__'
@@ -145,12 +178,15 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
     | '/reminders'
+    | '/report'
     | '/spiritual'
     | '/_authenticated/join'
+    | '/_authenticated/moderation'
     | '/invite/$code'
   fileRoutesById: FileRoutesById
 }
@@ -159,10 +195,12 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   CommunitiesRoute: typeof CommunitiesRoute
   EventsRoute: typeof EventsRoute
+  GuidelinesRoute: typeof GuidelinesRoute
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   ReflectRoute: typeof ReflectRoute
   RemindersRoute: typeof RemindersRoute
+  ReportRoute: typeof ReportRoute
   SpiritualRoute: typeof SpiritualRoute
   InviteCodeRoute: typeof InviteCodeRoute
 }
@@ -174,6 +212,13 @@ declare module '@tanstack/react-router' {
       path: '/spiritual'
       fullPath: '/spiritual'
       preLoaderRoute: typeof SpiritualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/report': {
+      id: '/report'
+      path: '/report'
+      fullPath: '/report'
+      preLoaderRoute: typeof ReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reminders': {
@@ -202,6 +247,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guidelines': {
+      id: '/guidelines'
+      path: '/guidelines'
+      fullPath: '/guidelines'
+      preLoaderRoute: typeof GuidelinesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events': {
@@ -239,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/moderation': {
+      id: '/_authenticated/moderation'
+      path: '/moderation'
+      fullPath: '/moderation'
+      preLoaderRoute: typeof AuthenticatedModerationRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/join': {
       id: '/_authenticated/join'
       path: '/join'
@@ -251,10 +310,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteChildren {
   AuthenticatedJoinRoute: typeof AuthenticatedJoinRoute
+  AuthenticatedModerationRoute: typeof AuthenticatedModerationRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedJoinRoute: AuthenticatedJoinRoute,
+  AuthenticatedModerationRoute: AuthenticatedModerationRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -266,10 +327,12 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   CommunitiesRoute: CommunitiesRoute,
   EventsRoute: EventsRoute,
+  GuidelinesRoute: GuidelinesRoute,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   ReflectRoute: ReflectRoute,
   RemindersRoute: RemindersRoute,
+  ReportRoute: ReportRoute,
   SpiritualRoute: SpiritualRoute,
   InviteCodeRoute: InviteCodeRoute,
 }
