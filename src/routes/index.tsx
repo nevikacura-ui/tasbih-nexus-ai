@@ -81,19 +81,22 @@ function HomePage() {
         </section>
 
         <section className="mt-5 px-5">
-          <div className="glass rounded-3xl p-5 shadow-soft">
+          <Link to="/reminders" className="glass block rounded-3xl p-5 shadow-soft transition-transform active:scale-[0.99]">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Next Prayer</p>
                 <p className="mt-1 font-display text-xl text-foreground">Maghrib</p>
                 <p className="text-xs text-muted-foreground">in 2h 14m · 5:42 PM</p>
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary">
+                  Customize reminders <ArrowRight className="h-3 w-3" />
+                </p>
               </div>
               <div className="relative h-16 w-16">
                 <div className="noor-ring animate-breathe absolute inset-0 rounded-full" />
                 <div className="bg-gold-gradient absolute inset-2 rounded-full opacity-90" />
               </div>
             </div>
-          </div>
+          </Link>
         </section>
 
         <section className="mt-7 px-5">

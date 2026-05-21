@@ -64,6 +64,22 @@ function ProfilePage() {
         </section>
 
         <section className="mt-6 px-5">
+          <Link
+            to="/reminders"
+            className="glass flex items-center gap-3 rounded-2xl p-4 shadow-soft transition-transform active:scale-[0.98]"
+          >
+            <div className="bg-gold-gradient flex h-10 w-10 items-center justify-center rounded-full">
+              <Bell className="h-4 w-4 text-deep" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Reminders & Noor Nudges</p>
+              <p className="text-[11px] text-muted-foreground">Customize prayers, daily nudges, quiet hours</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        </section>
+
+        <section className="mt-6 px-5">
           <h2 className="mb-3 font-display text-base text-foreground">Communities</h2>
           <div className="space-y-2.5">
             {memberships.map((m) => (
