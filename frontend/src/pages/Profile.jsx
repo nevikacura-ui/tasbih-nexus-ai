@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin, Compass, Building2, Music, Heart, Baby } from "lucide-react";
+import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin, Compass, Building2, Music, Heart, Baby, Calendar } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { useAuth } from "../lib/auth";
@@ -85,9 +85,9 @@ export default function ProfilePage() {
         </section>
 
         <section className="mt-6 space-y-2 px-5">
+          <RowLink to="/calendar" icon={Calendar} title="Ismaili Calendar" sub="Hijri dates, Navroz, Imamat Day, Salgirah & more" test="row-calendar" />
           <RowLink to="/sangat" icon={Compass} title="My Sangat" sub="Your spiritual passport — cities, mentors, khidmah" test="row-sangat" />
           <RowLink to="/ginan" icon={Music} title="Ginan" sub="Devotional poetry — Pir Hasan Kabirdin, Sadardin, Shams" test="row-ginan" />
-          <RowLink to="/dua" icon={Heart} title="Dua" sub="Quiet whispered prayers for moments of the day" test="row-dua" />
           <RowLink to="/family" icon={Baby} title="Family Corner" sub="Tiny parenting prompts by age stage" test="row-family" />
           <RowLink to="/orgs" icon={Building2} title="Organisations" sub="Directory · become an organisation" test="row-orgs" />
           {isAdmin && (

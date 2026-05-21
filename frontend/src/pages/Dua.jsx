@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X } from "lucide-react";
+import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home } from "lucide-react";
 import { api } from "../lib/api";
 
 // Cinematic palette per rakaat — mosque-silhouette inspired gradients.
@@ -13,27 +13,22 @@ const RAKAAT_THEMES = {
   6: { from: "#0e2840", via: "#1a4565", to: "#2d6688", accent: "#F4D88A", label: "Rakaat VI · Ikhlas & Didar" },
 };
 
-// SVG mosque silhouette — soft, abstract, drawn once and reused.
 const MosqueSilhouette = ({ color = "rgba(232,195,106,0.18)" }) => (
-  <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMax slice" className="absolute inset-x-0 bottom-0 h-1/2 w-full pointer-events-none">
+  <svg viewBox="0 0 400 200" preserveAspectRatio="xMidYMax slice" className="absolute inset-x-0 bottom-0 h-1/3 w-full pointer-events-none">
     <defs>
       <linearGradient id="mosqueFade" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor={color} stopOpacity="0" />
         <stop offset="100%" stopColor={color} stopOpacity="1" />
       </linearGradient>
     </defs>
-    {/* Side minarets */}
     <path d="M30,200 L30,80 Q35,72 35,68 Q35,60 30,55 Q25,60 25,68 Q25,72 30,80 Z M30,80 L36,80 L36,200 Z" fill="url(#mosqueFade)" />
     <path d="M370,200 L370,80 Q375,72 375,68 Q375,60 370,55 Q365,60 365,68 Q365,72 370,80 Z M364,80 L376,80 L376,200 Z" fill="url(#mosqueFade)" />
-    {/* Central dome + arch */}
     <path d="M120,200 L120,140 Q120,90 200,80 Q280,90 280,140 L280,200 Z" fill="url(#mosqueFade)" />
     <circle cx="200" cy="80" r="6" fill={color} opacity="0.6" />
-    {/* Side wings */}
     <path d="M60,200 L60,150 L110,150 L110,200 Z M290,200 L290,150 L340,150 L340,200 Z" fill="url(#mosqueFade)" />
   </svg>
 );
 
-// Soft radial light rays
 const LightRays = ({ accent }) => (
   <div
     className="pointer-events-none absolute inset-0"
@@ -53,12 +48,60 @@ const GrainTexture = () => (
   />
 );
 
-function DuaCard({ item, index, total, onTapArabic }) {
-  const theme = RAKAAT_THEMES[item.rakaat] || RAKAAT_THEMES[1];
+function DuaHalf({ item, accent, onTapArabic, half }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onTapArabic(item)}
+      data-testid={`dua-half-${item.id}`}
+      className="group relative flex flex-1 flex-col justify-center text-left transition-all tap-scale"
+    >
+      <p
+        className="text-[10px] uppercase tracking-[0.22em]"
+        style={{ color: accent }}
+      >
+        {item.title}
+      </p>
+      <h2
+        className="mt-2 font-display leading-[1.15] text-ivory"
+        style={{
+          fontSize: "clamp(22px, 5.6vw, 32px)",
+          textShadow: "0 2px 24px rgba(0,0,0,0.4)",
+          letterSpacing: "-0.005em",
+        }}
+        data-testid={`dua-translit-${item.id}`}
+      >
+        {item.transliteration}
+      </h2>
+      <div
+        className="mt-3 h-px w-10"
+        style={{ background: `linear-gradient(90deg, ${accent} 0%, transparent 100%)` }}
+      />
+      <p
+        className="mt-3 text-[13px] leading-relaxed text-ivory/80"
+        style={{ textShadow: "0 1px 12px rgba(0,0,0,0.3)" }}
+        data-testid={`dua-english-${item.id}`}
+      >
+        {item.english}
+      </p>
+      <span
+        className="mt-3 inline-flex w-fit items-center gap-1.5 text-[10px] text-ivory/55 opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        <Languages className="h-3 w-3" />
+        Tap for Arabic
+      </span>
+    </button>
+  );
+}
+
+function DuaPairCard({ pair, index, total, onTapArabic }) {
+  const theme = RAKAAT_THEMES[pair[0].rakaat] || RAKAAT_THEMES[1];
+  const [a, b] = pair;
+
   return (
     <section
-      data-testid={`dua-card-${item.id}`}
-      className="relative flex h-[100svh] w-full snap-start snap-always items-center justify-center overflow-hidden"
+      data-testid={`dua-card-${a.id}`}
+      className="relative flex h-[100svh] w-full snap-start snap-always flex-col overflow-hidden"
       style={{
         background: `linear-gradient(180deg, ${theme.from} 0%, ${theme.via} 45%, ${theme.to} 100%)`,
       }}
@@ -67,71 +110,48 @@ function DuaCard({ item, index, total, onTapArabic }) {
       <MosqueSilhouette color={`${theme.accent}33`} />
       <GrainTexture />
 
-      {/* Card content (transliteration top, english below) */}
-      <div className="relative z-10 flex h-full w-full flex-col px-7 pt-24 pb-32 text-ivory">
-        {/* Top label */}
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.22em]"
-            style={{ background: `${theme.accent}22`, color: theme.accent, border: `1px solid ${theme.accent}44` }}
-            data-testid={`dua-rakaat-tag-${item.id}`}
-          >
-            <Sparkles className="h-3 w-3" />
-            {theme.label}
-          </span>
+      <div className="relative z-10 flex h-full w-full flex-col px-7 pt-24 pb-10">
+        {/* Rakaat tag */}
+        <span
+          className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.22em]"
+          style={{ background: `${theme.accent}22`, color: theme.accent, border: `1px solid ${theme.accent}44` }}
+          data-testid={`dua-rakaat-tag-${a.id}`}
+        >
+          <Sparkles className="h-3 w-3" />
+          {theme.label}
+        </span>
+
+        {/* Pair body */}
+        <div className="mt-6 flex flex-1 flex-col">
+          <DuaHalf item={a} accent={theme.accent} onTapArabic={onTapArabic} half="top" />
+
+          {b && (
+            <>
+              <div className="my-5 flex items-center gap-3" aria-hidden="true">
+                <div
+                  className="h-px flex-1"
+                  style={{ background: `linear-gradient(90deg, transparent 0%, ${theme.accent}55 50%, transparent 100%)` }}
+                />
+                <Sparkles className="h-3 w-3" style={{ color: theme.accent }} />
+                <div
+                  className="h-px flex-1"
+                  style={{ background: `linear-gradient(90deg, transparent 0%, ${theme.accent}55 50%, transparent 100%)` }}
+                />
+              </div>
+              <DuaHalf item={b} accent={theme.accent} onTapArabic={onTapArabic} half="bottom" />
+            </>
+          )}
         </div>
 
-        {/* Title — small accent */}
-        <p
-          className="mt-7 font-display text-[13px] tracking-[0.18em] uppercase"
-          style={{ color: theme.accent }}
-        >
-          {item.title}
-        </p>
-
-        {/* TRANSLITERATION — large, primary */}
-        <h2
-          className="mt-3 font-display leading-[1.18] text-ivory"
-          style={{
-            fontSize: "clamp(28px, 7.6vw, 44px)",
-            textShadow: "0 2px 30px rgba(0,0,0,0.35)",
-            letterSpacing: "-0.01em",
-          }}
-          data-testid={`dua-translit-${item.id}`}
-        >
-          {item.transliteration}
-        </h2>
-
-        {/* Divider hairline */}
-        <div
-          className="my-6 h-px w-12"
-          style={{ background: `linear-gradient(90deg, ${theme.accent} 0%, transparent 100%)` }}
-        />
-
-        {/* English — below */}
-        <p
-          className="text-[15px] leading-relaxed text-ivory/85"
-          style={{ textShadow: "0 1px 16px rgba(0,0,0,0.3)" }}
-          data-testid={`dua-english-${item.id}`}
-        >
-          {item.english}
-        </p>
-
-        {/* Push the bottom action to footer */}
-        <div className="mt-auto flex items-center justify-between pt-6">
-          <button
-            type="button"
-            onClick={() => onTapArabic(item)}
-            data-testid={`dua-arabic-btn-${item.id}`}
-            className="inline-flex items-center gap-2 rounded-full border border-ivory/25 bg-ivory/10 px-4 py-2 text-[12px] font-medium text-ivory backdrop-blur-md transition-all hover:bg-ivory/20 tap-scale"
-          >
-            <Languages className="h-3.5 w-3.5" />
-            Tap for Arabic
-          </button>
-
+        {/* Footer counter */}
+        <div className="mt-4 flex items-center justify-between text-ivory/55">
+          <span className="inline-flex items-center gap-1.5 text-[10px]">
+            <Languages className="h-3 w-3" />
+            Tap a verse for Arabic
+          </span>
           <span
-            className="rounded-full bg-ivory/10 px-3 py-1 text-[10px] tracking-widest text-ivory/65 backdrop-blur-md"
-            data-testid={`dua-counter-${item.id}`}
+            className="rounded-full bg-ivory/10 px-3 py-1 text-[10px] tracking-widest backdrop-blur-md"
+            data-testid={`dua-counter-${a.id}`}
           >
             {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
           </span>
@@ -156,7 +176,6 @@ export default function DuaPage() {
       try {
         const r = await api.get("/dua");
         const list = r.data.dua || [];
-        // Sort by rakaat, then order, just in case
         list.sort((a, b) => (a.rakaat - b.rakaat) || (a.order - b.order));
         setItems(list);
         setCredit(r.data.credit || "");
@@ -168,10 +187,30 @@ export default function DuaPage() {
     })();
   }, []);
 
+  // Pair items within rakaat: each card shows 2 duas (1 if odd-tail)
+  const pairs = useMemo(() => {
+    const byRakaat = new Map();
+    items.forEach((d) => {
+      const r = d.rakaat || 1;
+      if (!byRakaat.has(r)) byRakaat.set(r, []);
+      byRakaat.get(r).push(d);
+    });
+    const out = [];
+    Array.from(byRakaat.keys())
+      .sort((a, b) => a - b)
+      .forEach((r) => {
+        const list = byRakaat.get(r);
+        for (let i = 0; i < list.length; i += 2) {
+          out.push([list[i], list[i + 1] || null]);
+        }
+      });
+    return out;
+  }, [items]);
+
   // Track current rakaat as user scrolls
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || items.length === 0) return;
+    if (!el || pairs.length === 0) return;
     const cards = el.querySelectorAll("[data-rakaat]");
     const io = new IntersectionObserver(
       (entries) => {
@@ -186,17 +225,17 @@ export default function DuaPage() {
     );
     cards.forEach((c) => io.observe(c));
     return () => io.disconnect();
-  }, [items, currentRakaat]);
+  }, [pairs, currentRakaat]);
 
   const rakaatGroups = useMemo(() => {
     const map = new Map();
-    items.forEach((d, idx) => {
-      const r = d.rakaat || 1;
-      if (!map.has(r)) map.set(r, { rakaat: r, firstIndex: idx, count: 0 });
-      map.get(r).count += 1;
+    pairs.forEach((pair) => {
+      const r = pair[0].rakaat || 1;
+      if (!map.has(r)) map.set(r, { rakaat: r, count: 0 });
+      map.get(r).count += pair[1] ? 2 : 1;
     });
     return Array.from(map.values()).sort((a, b) => a.rakaat - b.rakaat);
-  }, [items]);
+  }, [pairs]);
 
   const jumpToRakaat = (rakaat) => {
     const el = scrollerRef.current;
@@ -213,9 +252,10 @@ export default function DuaPage() {
       {/* Fixed overlay header */}
       <header className="pointer-events-none fixed top-0 left-1/2 z-40 flex w-full max-w-[480px] -translate-x-1/2 items-center justify-between px-5 pt-7">
         <Link
-          to="/profile"
+          to="/"
           data-testid="dua-back"
           className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-ivory/20 bg-black/35 text-ivory backdrop-blur-md tap-scale"
+          aria-label="Home"
         >
           <ChevronLeft className="h-4 w-4" />
         </Link>
@@ -230,7 +270,7 @@ export default function DuaPage() {
         </div>
       </header>
 
-      {/* Loading state */}
+      {/* Loading */}
       {loading && (
         <div className="flex h-[100svh] items-center justify-center bg-gradient-to-b from-[#0a2820] to-[#0F3D36] text-ivory" data-testid="dua-loading">
           <p className="text-xs uppercase tracking-[0.3em] text-ivory/60">Loading the Du'a…</p>
@@ -238,28 +278,22 @@ export default function DuaPage() {
       )}
 
       {/* Snap scroller */}
-      {!loading && items.length > 0 && (
+      {!loading && pairs.length > 0 && (
         <div
           ref={scrollerRef}
           className="h-[100svh] w-full snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
           style={{ scrollBehavior: "smooth" }}
           data-testid="dua-scroller"
         >
-          {items.map((item, idx) => {
-            const isFirstOfRakaat =
-              idx === 0 || items[idx - 1].rakaat !== item.rakaat;
+          {pairs.map((pair, idx) => {
+            const isFirstOfRakaat = idx === 0 || pairs[idx - 1][0].rakaat !== pair[0].rakaat;
             return (
               <div
-                key={item.id}
-                data-rakaat={item.rakaat}
-                {...(isFirstOfRakaat ? { "data-rakaat-anchor": item.rakaat } : {})}
+                key={pair[0].id}
+                data-rakaat={pair[0].rakaat}
+                {...(isFirstOfRakaat ? { "data-rakaat-anchor": pair[0].rakaat } : {})}
               >
-                <DuaCard
-                  item={item}
-                  index={idx}
-                  total={items.length}
-                  onTapArabic={setArabicOpen}
-                />
+                <DuaPairCard pair={pair} index={idx} total={pairs.length} onTapArabic={setArabicOpen} />
               </div>
             );
           })}
@@ -287,22 +321,32 @@ export default function DuaPage() {
               <p className="mt-2 text-[10px] text-ivory/45">
                 Personal, reflective renderings — not rulings.
               </p>
-              <Link
-                to="/noor"
-                data-testid="dua-credit-noor"
-                className="mt-7 inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-deep tap-scale"
-                style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
-              >
-                <Sparkles className="h-4 w-4" />
-                Sit with Noor
-              </Link>
+              <div className="mt-7 flex gap-2 justify-center">
+                <Link
+                  to="/"
+                  data-testid="dua-credit-home"
+                  className="inline-flex items-center gap-2 rounded-full border border-ivory/20 bg-ivory/10 px-5 py-3 text-sm font-medium text-ivory tap-scale"
+                >
+                  <Home className="h-4 w-4" />
+                  Home
+                </Link>
+                <Link
+                  to="/noor"
+                  data-testid="dua-credit-noor"
+                  className="inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-medium text-deep tap-scale"
+                  style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Sit with Noor
+                </Link>
+              </div>
             </div>
           </section>
         </div>
       )}
 
-      {/* Floating filter (bottom-right) */}
-      {!loading && items.length > 0 && (
+      {/* Floating filter */}
+      {!loading && pairs.length > 0 && (
         <button
           type="button"
           onClick={() => setFilterOpen(true)}
@@ -315,7 +359,7 @@ export default function DuaPage() {
         </button>
       )}
 
-      {/* Filter / Rakaat jump sheet */}
+      {/* Filter sheet */}
       {filterOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-sm"
@@ -377,7 +421,7 @@ export default function DuaPage() {
         </div>
       )}
 
-      {/* Arabic tap-to-expand modal */}
+      {/* Arabic modal */}
       {arabicOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md px-6"
@@ -403,7 +447,7 @@ export default function DuaPage() {
               className="mt-6 text-right leading-[1.9] text-ivory"
               style={{
                 fontFamily: "'Amiri', 'Scheherazade New', 'Noto Naskh Arabic', serif",
-                fontSize: "clamp(28px, 7vw, 38px)",
+                fontSize: "clamp(26px, 6.5vw, 36px)",
               }}
               data-testid="dua-arabic-text"
             >

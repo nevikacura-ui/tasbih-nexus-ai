@@ -28,6 +28,14 @@ The experience should feel:
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
 
+## Latest sprint — Holy Du'a redesign (May 21, 2026)
+- **Dua content (`backend/content.py`)**: replaced 20 situational duas with the **full Holy Du'a from user's 2025-dua-translation.pdf** — 110 verse-cards across 6 rakaats. Each item: `{id, rakaat, order, situation: "rakaat-N", title, transliteration, english, arabic}`. Imam reference globally updated **Karim → Rahim** (Aga Khan IV → Aga Khan V transition); also renamed ginan `eji_sahebjī_tum_kareem` → `eji_sahebjī_tum_rahim`.
+- **Dua page (`frontend/src/pages/Dua.jsx`)**: full rewrite as **Instagram-style scroll-snap feed**. Cinematic per-rakaat gradients (emerald/teal/plum/ruby/olive/blue) + mosque silhouette SVG + light rays + grain overlay. **Two duas per snap card** (paired within rakaat, odd-tail solo) → 56 cards total. Transliteration is the primary large display; English directly below; **Arabic revealed on tap** in a centered modal with dir=rtl. Floating gold filter button (bottom-right) opens a sheet to jump to any of the 6 rakaats. Current rakaat indicator at top-right updates via IntersectionObserver.
+- **Bottom nav (`frontend/src/components/MobileShell.jsx`)**: replaced **Calendar** with **Dua** (BookOpenText icon). Dua is now a primary nav destination.
+- **Profile page (`frontend/src/pages/Profile.jsx`)**: added "Ismaili Calendar" RowLink at the top of the section (since Calendar moved out of bottom nav); removed redundant standalone Dua row.
+- **Tests**: `backend/tests/test_dua_rakaat.py` — 15 cases, all green. Verifies Karim/Kareem fully purged, all 110 items present, 6 distinct rakaats, situation filter works, single-id lookup works, and ginan rename held.
+
+
 ### Demo cleanup
 - ✅ All fake mentor names removed (Dr. Sana, Hamza Karim, Ayesha Devji, Yusuf Damji deleted)
 - ✅ Hand-written "Layla / Imran / Sahar" demo reflections removed

@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { Home, Sparkles, Users, Calendar, User } from "lucide-react";
+import { Home, Sparkles, Users, BookOpenText, User } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Home", icon: Home, test: "nav-home" },
   { to: "/noor", label: "Noor", icon: Sparkles, test: "nav-noor" },
   { to: "/circles", label: "Circles", icon: Users, test: "nav-circles" },
-  { to: "/calendar", label: "Calendar", icon: Calendar, test: "nav-calendar" },
+  { to: "/dua", label: "Dua", icon: BookOpenText, test: "nav-dua" },
   { to: "/profile", label: "Profile", icon: User, test: "nav-profile" },
 ];
 
