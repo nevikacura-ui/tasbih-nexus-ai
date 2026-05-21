@@ -203,6 +203,12 @@ The experience should feel:
 - ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
 - ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
 
+### Bottom nav + email invite (Feb 2026)
+- ✅ Bottom nav rebuilt as a flat **fixed bar with hide-on-scroll-down / reveal-on-scroll-up** (was a floating pill that clipped content). Safe-area-inset on iOS. `pb-24` content padding ensures nothing is obscured.
+- ✅ **"Invite a friend by email"** share-sheet on `/invites` — recipient email + optional name + optional co-signer ("from me and Sara"). Backend mints two fresh codes issued_by the sender, tied to the recipient's email via `shared_with_email`, sends via **Resend** with a calm Georgia-serif HTML email (emerald + gold, Yā ʿAlī Madad header, two large code chips, Open Tasbih.ai CTA). Rolls back code creation on Resend failure.
+- ✅ Env: `RESEND_API_KEY` (set), `RESEND_FROM=Tasbih.ai <onboarding@resend.dev>` (sandbox), `APP_PUBLIC_URL` (preview URL).
+- ⚠️ Sandbox-sender caveat: `onboarding@resend.dev` only delivers to the Resend account owner's verified email on the free tier. Production needs a verified domain.
+
 ### Noor Moment (unique chat feature, Feb 2026)
 - ✅ Anyone in a community chat can tap the gold **Sparkles** button to invite Noor AI to drop a single 1-2 sentence calm reflection into the live conversation.
 - ✅ Rate-limited to **1 per 60 seconds per community** to keep Noor's presence rare and meaningful.
