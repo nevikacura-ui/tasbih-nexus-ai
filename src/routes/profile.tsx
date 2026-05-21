@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { MobileShell } from "@/components/MobileShell";
 import { NoorBackdrop } from "@/components/NoorBackdrop";
-import { Settings, Award, BookOpen, HandHeart, Users, Sparkles } from "lucide-react";
+import { Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/profile")({
   head: () => ({
@@ -23,9 +23,9 @@ function ProfilePage() {
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Profile</p>
             <h1 className="mt-1 font-display text-2xl text-foreground">Amir Karimov</h1>
           </div>
-          <button className="glass shadow-soft flex h-10 w-10 items-center justify-center rounded-full">
+          <Link to="/reminders" className="glass shadow-soft flex h-10 w-10 items-center justify-center rounded-full">
             <Settings className="h-4 w-4 text-foreground" />
-          </button>
+          </Link>
         </header>
 
         <section className="mt-5 px-5">
@@ -61,6 +61,22 @@ function ProfilePage() {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="mt-6 px-5">
+          <Link
+            to="/reminders"
+            className="glass flex items-center gap-3 rounded-2xl p-4 shadow-soft transition-transform active:scale-[0.98]"
+          >
+            <div className="bg-gold-gradient flex h-10 w-10 items-center justify-center rounded-full">
+              <Bell className="h-4 w-4 text-deep" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Reminders & Noor Nudges</p>
+              <p className="text-[11px] text-muted-foreground">Customize prayers, daily nudges, quiet hours</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
         </section>
 
         <section className="mt-6 px-5">
