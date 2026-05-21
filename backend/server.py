@@ -336,6 +336,9 @@ async def auth_me(user: User = Depends(current_user)):
 MSG91_AUTH_KEY = os.environ.get("MSG91_AUTH_KEY", "")
 MSG91_INTEGRATED_NUMBER = os.environ.get("MSG91_INTEGRATED_NUMBER", "")
 MSG91_WA_TEMPLATE = os.environ.get("MSG91_WA_TEMPLATE", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "Tasbih.ai <onboarding@resend.dev>")
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "https://tasbih.ai")
 
 
 class OtpSendIn(BaseModel):
@@ -564,6 +567,131 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
 async def list_my_invites(user: User = Depends(current_user)):
     codes = await db.invite_codes.find({"issued_by": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
     return {"codes": codes, "available": "unlimited"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Invite a friend via email (Resend)
+# Two-tap: pick a friend's email, we send them a calm note with two unused codes.
+# ──────────────────────────────────────────────────────────────────────────────
+class InviteEmailIn(BaseModel):
+    to_email: str
+    to_name: Optional[str] = ""
+    second_inviter_name: Optional[str] = ""  # optional "from me and Sara" co-sign
+
+
+def _invite_email_html(*, recipient_name: str, sender_name: str, second_inviter: str, code1: str, code2: str, app_url: str) -> str:
+    """Tiny inline-CSS email. Calm. No growth-hack tone."""
+    cosigner = f" and {second_inviter}" if (second_inviter or "").strip() else ""
+    safe_name = (recipient_name or "").strip() or "friend"
+    return f"""\
+<!doctype html>
+<html><body style="margin:0;padding:0;background:#F6F1E7;font-family:Georgia,'Times New Roman',serif;color:#0F3D36;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#FFFBF2;border-radius:20px;padding:36px 28px;box-shadow:0 18px 40px rgba(15,61,54,0.10);">
+        <tr><td align="center" style="padding-bottom:6px;font-size:11px;letter-spacing:0.28em;text-transform:uppercase;color:#0F3D36;opacity:0.55;">
+          Yā ʿAlī Madad
+        </td></tr>
+        <tr><td align="center" style="padding-bottom:18px;">
+          <span style="display:inline-block;font-family:Georgia,serif;font-size:30px;line-height:1.05;color:#0F3D36;">Tasbih<span style="color:#C9A46A">.</span>ai</span>
+        </td></tr>
+        <tr><td style="font-size:15px;line-height:1.65;color:#0F3D36;padding:0 4px 14px;">
+          Dear {safe_name},
+        </td></tr>
+        <tr><td style="font-size:15px;line-height:1.7;color:#0F3D36;padding:0 4px 18px;">
+          {sender_name}{cosigner} would love for you to step into <strong>Tasbih.ai</strong> — a quiet, invite-only companion for reflection, dhikr, and gentle community for the global jamat.
+        </td></tr>
+        <tr><td style="padding:6px 4px 4px;font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:#0F3D36;opacity:0.45;">
+          Your two invitation codes
+        </td></tr>
+        <tr><td align="center" style="padding:8px 4px 4px;">
+          <table role="presentation" cellpadding="0" cellspacing="8"><tr>
+            <td align="center" style="background:#0F3D36;color:#C9A46A;font-family:Menlo,Consolas,monospace;font-size:18px;letter-spacing:0.32em;padding:14px 22px;border-radius:14px;">{code1}</td>
+            <td align="center" style="background:#0F3D36;color:#C9A46A;font-family:Menlo,Consolas,monospace;font-size:18px;letter-spacing:0.32em;padding:14px 22px;border-radius:14px;">{code2}</td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="font-size:13px;line-height:1.7;color:#0F3D36;opacity:0.75;padding:14px 4px 6px;">
+          Both codes are from <strong>two different members</strong> who quietly vouch for you. They unlock one registration on the app.
+        </td></tr>
+        <tr><td align="center" style="padding:22px 4px 6px;">
+          <a href="{app_url}/login" style="display:inline-block;background:#0F3D36;color:#F6F1E7;text-decoration:none;font-size:14px;font-weight:500;padding:14px 28px;border-radius:999px;letter-spacing:0.02em;">Open Tasbih.ai →</a>
+        </td></tr>
+        <tr><td style="font-size:12px;line-height:1.6;color:#0F3D36;opacity:0.55;padding:22px 4px 0;text-align:center;">
+          Independent · community-driven · non-authoritative<br/>
+          You received this because {sender_name} chose to share Tasbih.ai with you. If this isn't for you, please simply ignore it.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+
+@api.post("/invites/send-email")
+async def send_invite_email(body: InviteEmailIn, user: User = Depends(current_user)):
+    """Mint TWO fresh codes issued by the sender (and optionally co-signed by a
+    second member) and send them to the recipient via Resend."""
+    if not RESEND_API_KEY:
+        raise HTTPException(status_code=500, detail="Email service not configured. Add RESEND_API_KEY in backend/.env.")
+    to_email = (body.to_email or "").strip().lower()
+    if "@" not in to_email or len(to_email) < 5:
+        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+
+    # Mint two fresh unique codes issued by this user
+    codes = []
+    seen = set()
+    for _ in range(20):
+        if len(codes) == 2:
+            break
+        c = _gen_invite_code()
+        if c in seen:
+            continue
+        seen.add(c)
+        if not await db.invite_codes.find_one({"code": c}, {"_id": 0}):
+            codes.append(c)
+    if len(codes) != 2:
+        raise HTTPException(status_code=500, detail="Could not generate codes. Try again.")
+    now = datetime.now(timezone.utc)
+    await db.invite_codes.insert_many([
+        {"code": codes[0], "issued_by": user.user_id, "used_by": None, "created_at": now, "shared_with_email": to_email},
+        {"code": codes[1], "issued_by": user.user_id, "used_by": None, "created_at": now, "shared_with_email": to_email},
+    ])
+
+    sender_name = (user.name or "A friend").strip()
+    html = _invite_email_html(
+        recipient_name=(body.to_name or "").strip(),
+        sender_name=sender_name,
+        second_inviter=(body.second_inviter_name or "").strip(),
+        code1=codes[0], code2=codes[1],
+        app_url=APP_PUBLIC_URL,
+    )
+    subject = f"Yā ʿAlī Madad — {sender_name} invited you to Tasbih.ai"
+    payload = {"from": RESEND_FROM, "to": [to_email], "subject": subject, "html": html}
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json=payload,
+            )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+        if r.status_code >= 400:
+            logger.warning(f"Resend failed: status={r.status_code} body={data}")
+            detail = (data.get("message") if isinstance(data, dict) else None) or "Could not send the email."
+            # roll back code creation so the user isn't left with phantom codes
+            await db.invite_codes.delete_many({"code": {"$in": codes}})
+            raise HTTPException(status_code=502, detail=str(detail))
+        email_id = data.get("id") if isinstance(data, dict) else None
+        logger.info(f"Resend OK to={to_email} id={email_id} codes={codes}")
+        return {"ok": True, "to": to_email, "codes": codes, "email_id": email_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"resend exception: {e}")
+        await db.invite_codes.delete_many({"code": {"$in": codes}})
+        raise HTTPException(status_code=502, detail="Could not reach the email service.")
 
 
 _INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I for legibility
