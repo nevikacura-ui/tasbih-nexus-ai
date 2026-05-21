@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpiritualRouteImport } from './routes/spiritual'
+import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ReflectRouteImport } from './routes/reflect'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as EventsRouteImport } from './routes/events'
@@ -19,6 +20,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const SpiritualRoute = SpiritualRouteImport.update({
   id: '/spiritual',
   path: '/spiritual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RemindersRoute = RemindersRouteImport.update({
+  id: '/reminders',
+  path: '/reminders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReflectRoute = ReflectRouteImport.update({
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/events': typeof EventsRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
+  '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/events': typeof EventsRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
+  '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/events': typeof EventsRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
+  '/reminders': typeof RemindersRoute
   '/spiritual': typeof SpiritualRoute
 }
 export interface FileRouteTypes {
@@ -80,9 +89,17 @@ export interface FileRouteTypes {
     | '/events'
     | '/profile'
     | '/reflect'
+    | '/reminders'
     | '/spiritual'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/communities' | '/events' | '/profile' | '/reflect' | '/spiritual'
+  to:
+    | '/'
+    | '/communities'
+    | '/events'
+    | '/profile'
+    | '/reflect'
+    | '/reminders'
+    | '/spiritual'
   id:
     | '__root__'
     | '/'
@@ -90,6 +107,7 @@ export interface FileRouteTypes {
     | '/events'
     | '/profile'
     | '/reflect'
+    | '/reminders'
     | '/spiritual'
   fileRoutesById: FileRoutesById
 }
@@ -99,6 +117,7 @@ export interface RootRouteChildren {
   EventsRoute: typeof EventsRoute
   ProfileRoute: typeof ProfileRoute
   ReflectRoute: typeof ReflectRoute
+  RemindersRoute: typeof RemindersRoute
   SpiritualRoute: typeof SpiritualRoute
 }
 
@@ -109,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/spiritual'
       fullPath: '/spiritual'
       preLoaderRoute: typeof SpiritualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reminders': {
+      id: '/reminders'
+      path: '/reminders'
+      fullPath: '/reminders'
+      preLoaderRoute: typeof RemindersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reflect': {
@@ -155,8 +181,19 @@ const rootRouteChildren: RootRouteChildren = {
   EventsRoute: EventsRoute,
   ProfileRoute: ProfileRoute,
   ReflectRoute: ReflectRoute,
+  RemindersRoute: RemindersRoute,
   SpiritualRoute: SpiritualRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
