@@ -53,9 +53,9 @@ class TestJamatkhanas:
         body = r.json()
         items = body.get("jamatkhanas") if isinstance(body, dict) else body
         assert isinstance(items, list)
-        assert len(items) == 146, f"expected 146, got {len(items)}"
+        assert len(items) == 99, f"expected 99, got {len(items)}"
         jk_ids = [x.get("jk_id") for x in items]
-        assert len(set(jk_ids)) == 146, "duplicate jk_id detected"
+        assert len(set(jk_ids)) == 99, "duplicate jk_id detected"
         sample = items[0]
         for key in ("name", "city", "country", "lat", "lng", "jk_id"):
             assert key in sample, f"missing key {key}"

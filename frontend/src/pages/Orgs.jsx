@@ -51,6 +51,19 @@ export default function OrgsPage() {
         </header>
 
         <section className="mt-5 px-5">
+          <Link to="/stewards" data-testid="orgs-stewards-cta" className="glass tap-scale flex items-center gap-3 rounded-2xl p-3 shadow-soft">
+            <div className="bg-gold-gradient flex h-9 w-9 items-center justify-center rounded-full">
+              <BadgeCheck className="h-4 w-4 text-deep" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-deep">Verified stewards</p>
+              <p className="text-[11px] text-deep/55">Organisations vouched for by Tasbih.ai</p>
+            </div>
+            <ChevronLeft className="h-4 w-4 rotate-180 text-deep/45" />
+          </Link>
+        </section>
+
+        <section className="mt-5 px-5">
           <div className="glass flex items-center gap-2 rounded-full px-4 py-2.5 shadow-soft">
             <Search className="h-4 w-4 text-deep/50" />
             <input

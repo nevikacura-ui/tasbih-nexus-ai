@@ -203,6 +203,16 @@ The experience should feel:
 - ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
 - ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
 
+### Launch-readiness audit (Feb 2026)
+- ✅ Live-tested MSG91 WhatsApp OTP end-to-end (real send + verify via hash-injected code → 90-day session)
+- ✅ Live-tested Resend email invite (sandbox sender, `delivered@resend.dev`)
+- ✅ Backend regression: 53/53 pytest cases pass
+- ✅ Dead/hardcoded Home tiles fixed: Events → real next event, "Volunteer" → Khidmah
+- ✅ Calendar promoted to bottom nav (replacing Events)
+- ✅ Verified Stewards public page at `/stewards`
+- ✅ Noor of the Day fetch made resilient with 3-attempt exponential backoff
+- 📄 Full audit document at `/app/memory/LAUNCH_AUDIT.md`
+
 ### Admin org-verification + Resend domain registration (Feb 2026)
 - ✅ Backend admin endpoints: `GET /api/admin/me`, `GET /api/admin/orgs`, `POST /api/admin/orgs/{id}/verify` with cascade to `communities` + `chat_messages` so the verified badge appears everywhere instantly.
 - ✅ Admin guard: `status == "admin"` OR `email == "admin@tasbih.ai"`. Profile shows a hidden `Admin · Stewards` row only when `/api/admin/me` returns `is_admin: true`.

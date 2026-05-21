@@ -14,30 +14,44 @@ export default function HomePage() {
   const [tasbih, setTasbih] = useState({ today: 0, streak: 0, total: 0 });
   const [comms, setComms] = useState([]);
   const [unread, setUnread] = useState(0);
+  const [nextEvent, setNextEvent] = useState(null);
+  const [todayCal, setTodayCal] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      try {
-        // Quick retry once in case axios fires before guest auth lands
-        const fetchOnce = (url) => api.get(url);
-        const fetchRetry = async (url) => {
+      const fetchOnce = (url) => api.get(url);
+      const fetchRetry = async (url, retries = 3) => {
+        for (let i = 0; i < retries; i++) {
           try { return await fetchOnce(url); }
-          catch { await new Promise(r => setTimeout(r, 600)); return fetchOnce(url); }
-        };
-        const [n, r, t, c, nt] = await Promise.all([
+          catch (e) {
+            if (i === retries - 1) throw e;
+            await new Promise(r => setTimeout(r, 400 * (i + 1)));
+          }
+        }
+      };
+      try {
+        const [n, r, t, c, nt, ev, cal] = await Promise.all([
           fetchRetry("/noor/today"),
           fetchRetry("/reflections"),
           fetchRetry("/tasbih/state"),
           fetchRetry("/communities"),
           api.get("/notifications").catch(() => ({ data: { unread: 0 } })),
+          api.get("/events").catch(() => ({ data: { events: [] } })),
+          api.get("/calendar/today").catch(() => ({ data: null })),
         ]);
+        if (cancelled) return;
         setNoor(n.data);
         setReflections(r.data.reflections || []);
         setTasbih(t.data);
         setComms((c.data.communities || []).slice(0, 4));
         setUnread(nt.data.unread || 0);
+        const evs = (ev.data?.events || []).filter((e) => new Date(e.date) >= new Date(new Date().setHours(0, 0, 0, 0)));
+        setNextEvent(evs[0] || null);
+        setTodayCal(cal.data || null);
       } catch (e) {}
     })();
+    return () => { cancelled = true; };
   }, []);
 
   const firstName = (user?.name || "").split(" ")[0] || "Friend";
@@ -180,10 +194,41 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Today on the calendar */}
+        {todayCal?.upcoming?.length > 0 && (
+          <section className="mt-5 px-5">
+            <Link to="/calendar" data-testid="home-calendar-strip" className="glass tap-scale flex items-center gap-3 rounded-2xl p-3.5 shadow-soft">
+              <div className="bg-emerald-gradient flex h-10 w-10 items-center justify-center rounded-full">
+                <Calendar className="h-4 w-4 text-gold" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-gold">On the calendar</p>
+                <p className="text-sm font-medium text-deep">{todayCal.upcoming[0].title}</p>
+                <p className="text-[11px] text-deep/55">{todayCal.upcoming[0].date}{todayCal.hijri ? ` · ${todayCal.hijri.day} ${todayCal.hijri.month_name}` : ""}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-deep/45" />
+            </Link>
+          </section>
+        )}
+
         {/* Feature tiles */}
         <section className="mt-6 grid grid-cols-2 gap-3 px-5">
-          <FeatureTile to="/events" icon={Calendar} title="Events" subtitle="Noor Night · Sat" tint="emerald" test="tile-events" />
-          <FeatureTile to="/circles" icon={HandHeart} title="Volunteer" subtitle="3 drives nearby" tint="gold" test="tile-volunteer" />
+          <FeatureTile
+            to="/events"
+            icon={Calendar}
+            title="Events"
+            subtitle={nextEvent ? `${nextEvent.title}` : "No upcoming yet"}
+            tint="emerald"
+            test="tile-events"
+          />
+          <FeatureTile
+            to="/khidmah"
+            icon={HandHeart}
+            title="Khidmah"
+            subtitle="Soft recognition"
+            tint="gold"
+            test="tile-volunteer"
+          />
         </section>
 
         {/* Noor Reflections */}

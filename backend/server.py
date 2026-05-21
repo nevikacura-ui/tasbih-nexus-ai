@@ -2426,12 +2426,14 @@ class OrgProfileIn(BaseModel):
 
 
 @api.get("/orgs")
-async def list_orgs(country: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None):
+async def list_orgs(country: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None, verified_only: bool = False):
     query = {"role": "org", "org_profile": {"$ne": None}}
     if country:
         query["org_profile.country"] = country
     if category:
         query["org_profile.category"] = category
+    if verified_only:
+        query["org_profile.verified"] = True
     if q:
         query["$or"] = [
             {"org_profile.name": {"$regex": q, "$options": "i"}},

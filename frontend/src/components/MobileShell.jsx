@@ -6,7 +6,7 @@ const NAV = [
   { to: "/", label: "Home", icon: Home, test: "nav-home" },
   { to: "/noor", label: "Noor", icon: Sparkles, test: "nav-noor" },
   { to: "/circles", label: "Circles", icon: Users, test: "nav-circles" },
-  { to: "/events", label: "Events", icon: Calendar, test: "nav-events" },
+  { to: "/calendar", label: "Calendar", icon: Calendar, test: "nav-calendar" },
   { to: "/profile", label: "Profile", icon: User, test: "nav-profile" },
 ];
 

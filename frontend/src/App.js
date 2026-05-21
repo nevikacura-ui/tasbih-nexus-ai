@@ -28,6 +28,7 @@ import OrgProfilePage from "./pages/OrgProfile";
 import NoorDigestPage from "./pages/NoorDigest";
 import CalendarPage from "./pages/Calendar";
 import AdminPage from "./pages/Admin";
+import StewardsPage from "./pages/Stewards";
 
 function Protected({ children }) {
   // Non-blocking: always render. Auth happens in background and pages handle
@@ -62,6 +63,7 @@ function Router() {
       <Route path="/noor/digest" element={<Protected><NoorDigestPage /></Protected>} />
       <Route path="/calendar" element={<Protected><CalendarPage /></Protected>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
+      <Route path="/stewards" element={<Protected><StewardsPage /></Protected>} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
       <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />
