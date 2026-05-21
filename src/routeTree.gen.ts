@@ -14,6 +14,7 @@ import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as ReflectRouteImport } from './routes/reflect'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as GuidelinesRouteImport } from './routes/guidelines'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as CommunitiesRouteImport } from './routes/communities'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
@@ -44,6 +45,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GuidelinesRoute = GuidelinesRouteImport.update({
+  id: '/guidelines',
+  path: '/guidelines',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsRoute = EventsRouteImport.update({
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/communities': typeof CommunitiesRoute
   '/events': typeof EventsRoute
+  '/guidelines': typeof GuidelinesRoute
   '/login': typeof LoginRoute
   '/profile': typeof ProfileRoute
   '/reflect': typeof ReflectRoute
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/communities'
     | '/events'
+    | '/guidelines'
     | '/login'
     | '/profile'
     | '/reflect'
@@ -159,6 +171,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   CommunitiesRoute: typeof CommunitiesRoute
   EventsRoute: typeof EventsRoute
+  GuidelinesRoute: typeof GuidelinesRoute
   LoginRoute: typeof LoginRoute
   ProfileRoute: typeof ProfileRoute
   ReflectRoute: typeof ReflectRoute
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/guidelines': {
+      id: '/guidelines'
+      path: '/guidelines'
+      fullPath: '/guidelines'
+      preLoaderRoute: typeof GuidelinesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events': {
@@ -266,6 +286,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   CommunitiesRoute: CommunitiesRoute,
   EventsRoute: EventsRoute,
+  GuidelinesRoute: GuidelinesRoute,
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   ReflectRoute: ReflectRoute,
@@ -276,3 +297,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
