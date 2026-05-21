@@ -446,24 +446,33 @@ async def noor_today():
 # Noor AI Chat (Claude Sonnet 4.5)
 # ──────────────────────────────────────────────────────────────────────────────
 NOOR_SYSTEM_PROMPT = (
-    "You are Noor, a calm, warm, deeply respectful AI spiritual companion for the Tasbih.ai "
-    "community — a modern Ismaili Muslim wellness platform inspired by the ethics of pluralism, "
-    "service, and the search for inner light (noor).\n\n"
-    "Voice & tone:\n"
-    "- Gentle, contemplative, never preachy or dogmatic.\n"
-    "- Short paragraphs, breathing room, like a thoughtful friend.\n"
-    "- Use first-person warmth (\"I hear you…\", \"Sit with me for a moment\").\n\n"
-    "Grounding:\n"
-    "- Draw quietly from Qurʾanic wisdom (cite the surah lightly when natural) and from the Ismaili "
-    "tradition of intellect (ʿaql), service (seva/khidmah), pluralism, and the ethics of His Highness "
-    "the Aga Khan when relevant. Ginanic poetry references are welcome when fitting.\n"
-    "- Stay respectful of all paths; never disparage another tradition.\n"
-    "- Avoid controversial fiqhi rulings; gently suggest the user consult a learned guide for legal matters.\n\n"
-    "Style guardrails:\n"
-    "- If the user is distressed, slow down, validate, offer a breathing prompt, then a single reflective question.\n"
-    "- Offer at most one Qurʾanic citation per response.\n"
-    "- End most replies with one small invitation — a phrase to whisper, a moment to notice, a tiny act of kindness.\n"
-    "- Keep replies under 140 words unless the user explicitly asks for more."
+    "You are Noor — a calm, warm, deeply respectful AI spiritual companion inside Tasbih.ai, "
+    "a modern Ismaili Muslim wellness platform. Tasbih.ai is an INDEPENDENT, community-driven app, "
+    "NOT a religious authority and NOT a representative of any institution.\n\n"
+    "Identity:\n"
+    "- Speak as a soft, thoughtful friend — never as a scholar or cleric.\n"
+    "- First-person warmth: \"I hear you…\", \"Sit with me for a moment\".\n"
+    "- Short paragraphs, breathing room, calm cadence.\n\n"
+    "Grounding (use lightly, never preach):\n"
+    "- The ethics of pluralism, intellect (ʿaql), and seva/khidmah from the Ismaili tradition, "
+    "  drawing softly on the wisdom of His Highness the Aga Khan when contextually relevant.\n"
+    "- Ginanic poetry (e.g. Pir Hasan Kabirdin, Pir Sadardin, Pir Shams) — quote a single short line "
+    "  in transliteration if it fits naturally, with a gentle English meaning.\n"
+    "- Qurʾanic verses — at most ONE per response, named lightly (e.g. \"Surah Aḍ-Ḍuḥā reminds…\").\n"
+    "- Universal Sufi and humanist wisdom is welcome where it brings calm.\n\n"
+    "STRICT SAFETY GUARDRAILS — refuse gracefully if asked for:\n"
+    "- Fatwas, fiqh rulings, or any 'is X halal/haram' answer. Redirect: \"That's a question for a learned "
+    "  guide. I can sit with the feeling underneath, if you'd like.\"\n"
+    "- Sectarian comparisons, theological debates, or comments on other paths/sects.\n"
+    "- Political content, controversial religious figures, or institutional commentary.\n"
+    "- Medical, legal, financial advice — gently suggest a qualified professional.\n"
+    "- Crisis cues (self-harm, abuse): offer warmth + a single line pointing to a trusted helpline / "
+    "  trusted adult, then stay present.\n\n"
+    "Tone rules:\n"
+    "- If the user is distressed: slow down, validate, offer one breath, one reflective question.\n"
+    "- End most replies with ONE small invitation — a phrase to whisper, a moment to notice, a tiny kindness.\n"
+    "- Keep replies under 140 words unless the user asks for more.\n"
+    "- Never claim authority. If unsure, say so warmly."
 )
 
 
@@ -576,6 +585,221 @@ async def rsvp(event_id: str, user: User = Depends(current_user)):
 async def list_reflections():
     items = await db.reflections.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
     return {"reflections": items}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Community Chat
+# ──────────────────────────────────────────────────────────────────────────────
+class ChatMessageIn(BaseModel):
+    text: str
+
+
+@api.get("/communities/{community_id}/messages")
+async def list_messages(community_id: str, since: Optional[str] = None, user: User = Depends(current_user)):
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+    query = {"community_id": community_id}
+    if since:
+        try:
+            ts = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            query["created_at"] = {"$gt": ts}
+        except ValueError:
+            pass
+    items = await db.chat_messages.find(query, {"_id": 0}).sort("created_at", 1).to_list(length=200)
+    return {"messages": items}
+
+
+@api.post("/communities/{community_id}/messages")
+async def send_message(community_id: str, body: ChatMessageIn, user: User = Depends(current_user)):
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    if len(text) > 1000:
+        raise HTTPException(status_code=400, detail="Message is too long (1000 chars max).")
+    msg = {
+        "message_id": f"msg_{uuid.uuid4().hex[:12]}",
+        "community_id": community_id,
+        "user_id": user.user_id,
+        "author_name": user.name,
+        "text": text,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.chat_messages.insert_one(dict(msg))
+    return msg
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Quran Reflections (curated, non-authoritative summaries)
+# ──────────────────────────────────────────────────────────────────────────────
+QURAN_REFLECTIONS = [
+    {
+        "id": "q_duha",
+        "surah": "Aḍ-Ḍuḥā",
+        "ref": "93:1–11",
+        "theme": "Reassurance after silence",
+        "ar": "وَالضُّحَىٰ ۝ وَاللَّيْلِ إِذَا سَجَىٰ ۝ مَا وَدَّعَكَ رَبُّكَ وَمَا قَلَىٰ",
+        "summary": "When the world feels quiet and you wonder if you've been forgotten — the morning still rises. The surah is a tender reassurance: nothing tender in your life is being wasted.",
+        "invitation": "Name one quiet mercy you noticed today.",
+    },
+    {
+        "id": "q_sharh",
+        "surah": "Ash-Sharḥ",
+        "ref": "94:1–8",
+        "theme": "Ease woven into hardship",
+        "ar": "فَإِنَّ مَعَ الْعُسْرِ يُسْرًا ۝ إِنَّ مَعَ الْعُسْرِ يُسْرًا",
+        "summary": "Ease is not waiting at the other end of difficulty — it is woven into the same breath. The surah invites a softer relationship with the heavy hours.",
+        "invitation": "Place a hand on your chest and breathe three slow breaths.",
+    },
+    {
+        "id": "q_rahman",
+        "surah": "Ar-Raḥmān",
+        "ref": "55:13",
+        "theme": "Quiet gratitude",
+        "ar": "فَبِأَيِّ آلَاءِ رَبِّكُمَا تُكَذِّبَانِ",
+        "summary": "A refrain that returns thirty-one times: which of the gifts will you deny? A gentle nudge to count what is already here.",
+        "invitation": "Whisper one thank-you for something small.",
+    },
+    {
+        "id": "q_kahf",
+        "surah": "Al-Kahf",
+        "ref": "18:10",
+        "theme": "Shelter for the seekers",
+        "ar": "رَبَّنَا آتِنَا مِن لَّدُنكَ رَحْمَةً وَهَيِّئْ لَنَا مِنْ أَمْرِنَا رَشَدًا",
+        "summary": "The young seekers of the cave asked simply for mercy and clear direction. A reminder that sincerity is the beginning of guidance.",
+        "invitation": "What would you ask for if you were that honest tonight?",
+    },
+    {
+        "id": "q_hujurat",
+        "surah": "Al-Ḥujurāt",
+        "ref": "49:13",
+        "theme": "Pluralism & dignity",
+        "ar": "يَا أَيُّهَا النَّاسُ إِنَّا خَلَقْنَاكُم مِّن ذَكَرٍ وَأُنثَىٰ وَجَعَلْنَاكُمْ شُعُوبًا وَقَبَائِلَ لِتَعَارَفُوا",
+        "summary": "Difference among peoples is woven on purpose — so that we may come to know one another. Echoes the Ismaili ethic of pluralism beautifully.",
+        "invitation": "Reach out to one person unlike you this week.",
+    },
+]
+
+
+@api.get("/quran/reflections")
+async def quran_reflections():
+    return {"reflections": QURAN_REFLECTIONS}
+
+
+@api.get("/quran/reflections/{rid}")
+async def quran_reflection(rid: str):
+    item = next((q for q in QURAN_REFLECTIONS if q["id"] == rid), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Reflection not found")
+    return item
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Ramadan tools
+# ──────────────────────────────────────────────────────────────────────────────
+RAMADAN_2026_START = datetime(2026, 2, 18, tzinfo=timezone.utc)  # approximate; user can override
+RAMADAN_DAYS = 30
+
+
+def _ramadan_status():
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    delta = (today - RAMADAN_2026_START).days
+    if delta < 0:
+        return {"phase": "before", "days_until": -delta, "day": None, "total": RAMADAN_DAYS}
+    if delta >= RAMADAN_DAYS:
+        return {"phase": "after", "days_since": delta - RAMADAN_DAYS + 1, "day": None, "total": RAMADAN_DAYS}
+    return {"phase": "during", "day": delta + 1, "total": RAMADAN_DAYS}
+
+
+@api.get("/ramadan/state")
+async def ramadan_state(user: User = Depends(current_user)):
+    status = _ramadan_status()
+    logged = await db.ramadan_log.find({"user_id": user.user_id}, {"_id": 0}).to_list(length=40)
+    return {**status, "logged_days": [l["day"] for l in logged], "entries": logged}
+
+
+class RamadanLogIn(BaseModel):
+    day: int
+    note: Optional[str] = None
+    intention: Optional[str] = None
+
+
+@api.post("/ramadan/log")
+async def ramadan_log(body: RamadanLogIn, user: User = Depends(current_user)):
+    if body.day < 1 or body.day > RAMADAN_DAYS:
+        raise HTTPException(status_code=400, detail="Invalid Ramadan day")
+    await db.ramadan_log.update_one(
+        {"user_id": user.user_id, "day": body.day},
+        {"$set": {
+            "user_id": user.user_id, "day": body.day,
+            "note": body.note, "intention": body.intention,
+            "logged_at": datetime.now(timezone.utc),
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reminders (in-app)
+# ──────────────────────────────────────────────────────────────────────────────
+class ReminderIn(BaseModel):
+    label: str
+    time: str  # "HH:MM" in user's local time
+    kind: str = "prayer"  # prayer | dhikr | journal | custom
+    enabled: bool = True
+
+
+@api.get("/reminders")
+async def list_reminders(user: User = Depends(current_user)):
+    items = await db.reminders.find({"user_id": user.user_id}, {"_id": 0}).sort("time", 1).to_list(length=50)
+    if not items:
+        # Seed default soft prayer reminders the first time
+        defaults = [
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Fajr", "time": "05:30", "kind": "prayer", "enabled": True},
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Dhuhr", "time": "13:00", "kind": "prayer", "enabled": True},
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Asr", "time": "16:30", "kind": "prayer", "enabled": True},
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Maghrib", "time": "18:45", "kind": "prayer", "enabled": True},
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Isha", "time": "20:30", "kind": "prayer", "enabled": True},
+            {"reminder_id": f"rem_{uuid.uuid4().hex[:8]}", "user_id": user.user_id, "label": "Evening journal", "time": "21:30", "kind": "journal", "enabled": True},
+        ]
+        await db.reminders.insert_many([dict(d) for d in defaults])
+        items = defaults
+    return {"reminders": items}
+
+
+@api.post("/reminders")
+async def create_reminder(body: ReminderIn, user: User = Depends(current_user)):
+    rem = {
+        "reminder_id": f"rem_{uuid.uuid4().hex[:8]}",
+        "user_id": user.user_id,
+        **body.dict(),
+    }
+    await db.reminders.insert_one(dict(rem))
+    return rem
+
+
+@api.patch("/reminders/{rid}")
+async def update_reminder(rid: str, body: ReminderIn, user: User = Depends(current_user)):
+    r = await db.reminders.find_one_and_update(
+        {"reminder_id": rid, "user_id": user.user_id},
+        {"$set": body.dict()},
+        return_document=True,
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return {"ok": True}
+
+
+@api.delete("/reminders/{rid}")
+async def delete_reminder(rid: str, user: User = Depends(current_user)):
+    r = await db.reminders.delete_one({"reminder_id": rid, "user_id": user.user_id})
+    if r.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return {"ok": True}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

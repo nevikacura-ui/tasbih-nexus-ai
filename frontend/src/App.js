@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 import SplashScreen from "./components/SplashScreen";
+import ReminderToaster from "./components/ReminderToaster";
 import AuthCallback from "./pages/AuthCallback";
 import LoginPage from "./pages/Login";
 import OnboardingPage from "./pages/Onboarding";
@@ -10,9 +11,12 @@ import NoorPage from "./pages/Noor";
 import TasbihPage from "./pages/Tasbih";
 import JournalPage from "./pages/Journal";
 import CommunitiesPage from "./pages/Communities";
+import CommunityChatPage from "./pages/CommunityChat";
 import EventsPage from "./pages/Events";
 import ProfilePage from "./pages/Profile";
 import InvitesPage from "./pages/Invites";
+import QuranPage, { RamadanPage } from "./pages/Quran";
+import RemindersPage from "./pages/Reminders";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -28,7 +32,6 @@ function Protected({ children }) {
 
 function Router() {
   const loc = useLocation();
-  // Synchronous fragment check — must run during render before ProtectedRoute
   if (loc.hash?.includes("session_id=")) return <AuthCallback />;
 
   return (
@@ -39,7 +42,11 @@ function Router() {
       <Route path="/noor" element={<Protected><NoorPage /></Protected>} />
       <Route path="/tasbih" element={<Protected><TasbihPage /></Protected>} />
       <Route path="/journal" element={<Protected><JournalPage /></Protected>} />
+      <Route path="/quran" element={<Protected><QuranPage /></Protected>} />
+      <Route path="/ramadan" element={<Protected><RamadanPage /></Protected>} />
+      <Route path="/reminders" element={<Protected><RemindersPage /></Protected>} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
+      <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />
       <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
       <Route path="/invites" element={<Protected><InvitesPage /></Protected>} />
@@ -49,7 +56,6 @@ function Router() {
 }
 
 export default function App() {
-  // Show splash once per browser session
   const [showSplash, setShowSplash] = useState(() => {
     try { return sessionStorage.getItem("tasbih_splash_shown") !== "1"; }
     catch { return true; }
@@ -66,6 +72,7 @@ export default function App() {
   return (
     <AuthProvider>
       {showSplash && <SplashScreen />}
+      <ReminderToaster />
       <Router />
     </AuthProvider>
   );

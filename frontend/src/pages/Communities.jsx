@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Search, Users, MapPin, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Search, Users, MapPin, Plus, MessageCircle } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
@@ -95,18 +96,27 @@ export default function CommunitiesPage() {
                   </p>
                   <p className="mt-2 line-clamp-2 text-xs text-deep/70">{c.description}</p>
                 </div>
-                <button
-                  onClick={() => !isMember(c.community_id) && join(c.community_id)}
-                  data-testid={`join-${c.community_id}`}
-                  disabled={isMember(c.community_id)}
-                  className={`self-start rounded-full px-3 py-1.5 text-[11px] font-semibold tap-scale ${
-                    isMember(c.community_id)
-                      ? "bg-deep/10 text-deep"
-                      : "bg-gold-gradient text-deep"
-                  }`}
-                >
-                  {isMember(c.community_id) ? "Joined" : "Join"}
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    onClick={() => !isMember(c.community_id) && join(c.community_id)}
+                    data-testid={`join-${c.community_id}`}
+                    disabled={isMember(c.community_id)}
+                    className={`rounded-full px-3 py-1.5 text-[11px] font-semibold tap-scale ${
+                      isMember(c.community_id)
+                        ? "bg-deep/10 text-deep"
+                        : "bg-gold-gradient text-deep"
+                    }`}
+                  >
+                    {isMember(c.community_id) ? "Joined" : "Join"}
+                  </button>
+                  <Link
+                    to={`/circles/${c.community_id}/chat`}
+                    data-testid={`chat-${c.community_id}`}
+                    className="inline-flex items-center gap-1 rounded-full bg-emerald-gradient px-3 py-1.5 text-[10px] font-semibold text-ivory tap-scale"
+                  >
+                    <MessageCircle className="h-3 w-3" /> Chat
+                  </Link>
+                </div>
               </div>
             ))}
             {filtered.length === 0 && (

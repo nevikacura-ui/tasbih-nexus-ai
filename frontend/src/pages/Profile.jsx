@@ -81,7 +81,7 @@ export default function ProfilePage() {
           <RowLink to="/invites" icon={UserPlus} title="Invitations" sub="Welcome friends with grace" test="row-invites" />
           <RowLink to="/journal" icon={BookOpen} title="My journal" sub={`${journalCount} private entries`} test="row-journal" />
           <RowLink to="/tasbih" icon={Flame} title="Dhikr & streaks" sub={`${tasbih.streak ?? 0}-day streak`} test="row-tasbih" />
-          <Row icon={Bell} title="Reminders & Noor Nudges" sub="Coming soon — soft, gentle notifications" />
+          <RowLink to="/reminders" icon={Bell} title="Reminders & Noor Nudges" sub="Soft in-app cues for prayer, dhikr & journaling" test="row-reminders" />
           <Row icon={ShieldCheck} title="Community Guidelines" sub="Calm, respectful, non-authoritative" />
         </section>
 

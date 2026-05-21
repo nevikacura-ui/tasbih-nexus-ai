@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart } from "lucide-react";
+import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
+import { RamadanCard } from "./Quran";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 
