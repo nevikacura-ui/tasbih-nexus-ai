@@ -146,8 +146,10 @@ The experience should feel:
 - ✅ Rules card so members know exactly how to earn (encourages real-world acts, not posting)
 
 ### Auth resilience
+- ✅ **Non-blocking auth bootstrap** — Protected wrapper no longer gates the UI. Pages render immediately and auth syncs in the background.
 - ✅ **Cookie + localStorage token dual fallback** — guest endpoint returns `session_token` in JSON body, frontend stores it, axios interceptor attaches it as `Authorization: Bearer …` on every request. Works even when mobile browsers block cookies.
-- ✅ "Continue as guest" recovery screen with retry + actual error surfacing
+- ✅ Axios timeout: 15s (so requests never hang silently)
+- ✅ Faster splash (1.1s show → 1.7s gone)
 - ✅ Auth gate flag `INVITE_GATE_ENABLED` still **off** for free testing
 
 ### Splash + brand

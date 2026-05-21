@@ -18,6 +18,7 @@ export const getStoredToken = () => {
 export const api = axios.create({
   baseURL: API,
   withCredentials: true,
+  timeout: 15000,
 });
 
 // Attach Authorization header from localStorage as a fallback when cookies fail

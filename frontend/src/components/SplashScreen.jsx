@@ -9,8 +9,11 @@ export default function SplashScreen() {
   const [gone, setGone] = useState(false);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setHide(true), 1600);
-    const t2 = setTimeout(() => setGone(true), 2400);
+    const t1 = setTimeout(() => {
+      try { sessionStorage.setItem("tasbih_splash_shown", "1"); } catch {}
+      setHide(true);
+    }, 1100);
+    const t2 = setTimeout(() => setGone(true), 1700);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
