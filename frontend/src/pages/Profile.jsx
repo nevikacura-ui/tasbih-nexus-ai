@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin } from "lucide-react";
+import { LogOut, Sparkles, BookOpen, HandHeart, Award, Bell, ChevronRight, ShieldCheck, UserPlus, Flame, Users, GraduationCap, Crown, MapPin, Compass, Building2 } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { useAuth } from "../lib/auth";
@@ -78,6 +78,8 @@ export default function ProfilePage() {
         </section>
 
         <section className="mt-6 space-y-2 px-5">
+          <RowLink to="/sangat" icon={Compass} title="My Sangat" sub="Your spiritual passport — cities, mentors, khidmah" test="row-sangat" />
+          <RowLink to="/orgs" icon={Building2} title="Organisations" sub="Directory · become an organisation" test="row-orgs" />
           <RowLink to="/invites" icon={UserPlus} title="Invitations" sub="Welcome friends with grace" test="row-invites" />
           <RowLink to="/jamatkhana" icon={MapPin} title="Find your Jamatkhana" sub="Auto-locate or browse by country" test="row-jamatkhana" />
           <RowLink to="/notifications" icon={Bell} title="Notifications" sub="Mentorship updates, mod actions, recognition" test="row-notifications" />

@@ -189,6 +189,14 @@ The experience should feel:
 - ✅ Faster splash (1.1s show → 1.7s gone)
 - ✅ Auth gate flag `INVITE_GATE_ENABLED` still **off** for free testing
 
+### Phase 4 / engagement (Feb 2026)
+- ✅ **Jamatkhana directory expanded to 146 entries** across 25+ countries (Canada, US, UK, Portugal, France, UAE, Kenya, Tanzania, India, Pakistan, Tajikistan, Singapore, Australia, Madagascar, Mozambique, Syria, Afghanistan, etc.). Duplicate seed block removed.
+- ✅ **Become an organisation** — new `role: "org"` on User + `org_profile` doc (name, tagline, description, category, country, city, website, logo, verified). Backend: `GET /api/orgs`, `GET/POST/DELETE /api/orgs/me`, `GET /api/orgs/{id}`. Frontend: `/orgs` directory + `/orgs/me` form. Profile row-link added.
+- ✅ **Post as organisation** — `as_org` flag on `POST /communities/{id}/posts` attaches org name + verified badge. Community creation also accepts `as_org` → marks `official: true` and stamps `org_id` / `org_name`. UI shows checkbox in feed composer + create-circle modal, and badges on cards.
+- ✅ **City geocoding (free-text)** — Open-Meteo geocoding (primary, free, no key) + Nominatim fallback. `POST /api/profile/city` resolves city → {city, country, lat, lng} and stores on the user. Wired into Onboarding step 4 (city) — saves automatically when user clicks Continue.
+- ✅ **Noor Digest** — weekly Sunday reflection (`GET /api/noor/digest`). Generates a calm 4-sentence summary on-demand using Claude Sonnet 4.5, only from the user's own data (journal + tasbih + khidmah). Cached per ISO week. Home page now shows "Sunday reflection · Your Noor Digest is ready" card → `/noor/digest` page.
+- ✅ **My Sangat — spiritual passport** — `/sangat` page with Leaflet + OpenStreetMap map plotting the user's home city, home jamatkhana, and jamatkhanas near every circle they've joined. Stat tiles for tasbih streak, khidmah, circles, mentors. Backend: `GET /api/profile/sangat`.
+
 ### Splash + brand
 - ✅ Cinematic full-screen **splash on first session** (user-supplied art)
 - ✅ Favicon, PWA manifest, theme color

@@ -61,6 +61,8 @@ class User(BaseModel):
     invite_codes_used: List[str] = []
     referrals_received: int = 2  # member by invite system
     invites_available: int = 3
+    role: str = "member"  # "member" | "org"
+    org_profile: Optional[dict] = None
     created_at: datetime
 
 
@@ -944,6 +946,7 @@ async def ws_community(websocket: WebSocket, community_id: str, token: Optional[
 # ──────────────────────────────────────────────────────────────────────────────
 class PostIn(BaseModel):
     text: str
+    as_org: bool = False
 
 
 class CommentIn(BaseModel):
@@ -978,11 +981,16 @@ async def create_post(community_id: str, body: PostIn, user: User = Depends(curr
     text = body.text.strip()
     if not text or len(text) > 2000:
         raise HTTPException(status_code=400, detail="Post text must be 1–2000 chars.")
+    is_org = body.as_org and user.role == "org" and user.org_profile
+    org_name = (user.org_profile or {}).get("name") if is_org else None
     post = {
         "post_id": f"post_{uuid.uuid4().hex[:12]}",
         "community_id": community_id,
         "user_id": user.user_id,
-        "author_name": user.name,
+        "author_name": org_name if is_org else user.name,
+        "author_kind": "org" if is_org else "user",
+        "org_id": user.user_id if is_org else None,
+        "verified": bool(is_org and (user.org_profile or {}).get("verified")),
         "text": text,
         "likes": 0,
         "created_at": datetime.now(timezone.utc),
@@ -1466,6 +1474,7 @@ class CommunityIn(BaseModel):
     country: str = "Global"
     city: str = "Global"
     description: str = ""
+    as_org: bool = False
 
 
 @api.get("/communities/categories")
@@ -1489,6 +1498,8 @@ async def create_community(body: CommunityIn, user: User = Depends(current_user)
     if len(name) < 3:
         raise HTTPException(status_code=400, detail="Community name is too short.")
     community_id = f"c_{uuid.uuid4().hex[:10]}"
+    is_org = body.as_org and user.role == "org" and user.org_profile
+    org_name = (user.org_profile or {}).get("name") if is_org else None
     doc = {
         "community_id": community_id,
         "name": name,
@@ -1498,7 +1509,10 @@ async def create_community(body: CommunityIn, user: User = Depends(current_user)
         "city": body.city.strip() or "Global",
         "description": body.description.strip()[:600],
         "members": 1,
-        "official": False,
+        "official": bool(is_org),
+        "verified": bool(is_org and (user.org_profile or {}).get("verified")),
+        "org_id": user.user_id if is_org else None,
+        "org_name": org_name,
         "created_by": user.user_id,
         "moderators": [user.user_id],
         "created_at": datetime.now(timezone.utc),
@@ -1628,6 +1642,96 @@ async def geocode_city(q: str):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Nominatim-backed open geocoder (free, no key) — used when user types a city
+# that isn't in our JK directory.
+# ──────────────────────────────────────────────────────────────────────────────
+async def _nominatim_lookup(query: str) -> Optional[dict]:
+    q = (query or "").strip()
+    if len(q) < 2:
+        return None
+    # Tiny in-memory cache to be polite to the free tier
+    cached = await db.geocode_cache.find_one({"q": q.lower()}, {"_id": 0})
+    if cached and cached.get("hit"):
+        return cached.get("result")
+    result = None
+    # Primary: Open-Meteo Geocoding (free, no key, generous limits)
+    try:
+        async with httpx.AsyncClient(timeout=10) as hc:
+            r = await hc.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": q, "count": 1, "language": "en", "format": "json"},
+            )
+            r.raise_for_status()
+            data = r.json() or {}
+            arr = data.get("results") or []
+            if arr:
+                item = arr[0]
+                result = {
+                    "lat": float(item["latitude"]),
+                    "lng": float(item["longitude"]),
+                    "city": item.get("name") or q,
+                    "country": item.get("country") or "",
+                    "display_name": ", ".join([x for x in [item.get("name"), item.get("admin1"), item.get("country")] if x]),
+                }
+    except Exception as e:
+        logger.warning(f"open-meteo geocode failed: {e}")
+    # Fallback: Nominatim
+    if not result:
+        try:
+            async with httpx.AsyncClient(timeout=10) as hc:
+                r = await hc.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": q, "format": "json", "limit": 1, "addressdetails": 1, "accept-language": "en"},
+                    headers={"User-Agent": "Tasbih.ai/1.0 (community ed.)", "Accept-Language": "en"},
+                )
+                r.raise_for_status()
+                arr = r.json() or []
+                if arr:
+                    item = arr[0]
+                    addr = item.get("address") or {}
+                    city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("hamlet") or addr.get("county") or item.get("display_name", "").split(",")[0]
+                    result = {
+                        "lat": float(item["lat"]),
+                        "lng": float(item["lon"]),
+                        "city": city or q,
+                        "country": addr.get("country") or "",
+                        "display_name": item.get("display_name") or "",
+                    }
+        except Exception as e:
+            logger.warning(f"nominatim failed: {e}")
+    if not result:
+        await db.geocode_cache.update_one({"q": q.lower()}, {"$set": {"q": q.lower(), "hit": False, "ts": datetime.now(timezone.utc)}}, upsert=True)
+        return None
+    await db.geocode_cache.update_one({"q": q.lower()}, {"$set": {"q": q.lower(), "hit": True, "result": result, "ts": datetime.now(timezone.utc)}}, upsert=True)
+    return result
+
+
+class CityIn(BaseModel):
+    city: str
+
+
+@api.post("/profile/city")
+async def set_profile_city(body: CityIn, user: User = Depends(current_user)):
+    """Geocode the user's free-text city via Nominatim and save lat/lng + canonical name."""
+    raw = (body.city or "").strip()
+    if not raw:
+        await db.users.update_one({"user_id": user.user_id}, {"$unset": {"city": "", "home_city": ""}})
+        return {"ok": True, "city": None}
+    geo = await _nominatim_lookup(raw)
+    update = {"city": (geo or {}).get("city") or raw}
+    if geo:
+        update["home_city"] = {
+            "name": geo["city"],
+            "country": geo["country"],
+            "lat": geo["lat"],
+            "lng": geo["lng"],
+            "display_name": geo["display_name"],
+        }
+    await db.users.update_one({"user_id": user.user_id}, {"$set": update})
+    return {"ok": True, "city": update["city"], "geo": geo}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # My Sangat — personal spiritual passport
 # ──────────────────────────────────────────────────────────────────────────────
 @api.get("/profile/sangat")
@@ -1673,12 +1777,26 @@ async def my_sangat(user: User = Depends(current_user)):
     # Tasbih streak
     tasbih = await db.tasbih_state.find_one({"user_id": user.user_id}, {"_id": 0}) or {"streak": 0, "total": 0}
 
-    # Home jamatkhana
-    home_jk = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0})).get("home_jk")
+    # Home jamatkhana + city geo
+    user_doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+    home_jk = user_doc.get("home_jk")
+    home_city = user_doc.get("home_city")
+
+    # All jamatkhanas matching member cities so map can plot them
+    city_keys = []
+    for m in enriched_mems:
+        c = (m.get("community") or {})
+        if c.get("city") and c.get("city") != "Global":
+            city_keys.append(c["city"])
+    nearby_jks = []
+    if city_keys:
+        nearby_jks = await db.jamatkhanas.find({"city": {"$in": list(set(city_keys))}}, {"_id": 0}).to_list(length=200)
 
     return {
         "user": {"user_id": user.user_id, "name": user.name, "city": user.city, "status": user.status},
         "home_jamatkhana": home_jk,
+        "home_city": home_city,
+        "city_jamatkhanas": nearby_jks,
         "memberships": enriched_mems,
         "mentors": mentors,
         "mentee_count": mentee_count,
@@ -1773,6 +1891,121 @@ async def noor_digest(user: User = Depends(current_user)):
     }
     await db.noor_digests.insert_one(dict(doc))
     return doc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Organisations — "Become an org" + directory
+# ──────────────────────────────────────────────────────────────────────────────
+ORG_CATEGORIES = {"spiritual", "ecdc", "empowerment", "social_work", "health", "education", "other"}
+
+
+class OrgProfileIn(BaseModel):
+    name: str
+    tagline: Optional[str] = ""
+    description: str = ""
+    category: str = "other"
+    country: str = "Global"
+    city: str = "Global"
+    website: Optional[str] = ""
+    logo_url: Optional[str] = ""
+
+
+@api.get("/orgs")
+async def list_orgs(country: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None):
+    query = {"role": "org", "org_profile": {"$ne": None}}
+    if country:
+        query["org_profile.country"] = country
+    if category:
+        query["org_profile.category"] = category
+    if q:
+        query["$or"] = [
+            {"org_profile.name": {"$regex": q, "$options": "i"}},
+            {"org_profile.description": {"$regex": q, "$options": "i"}},
+            {"org_profile.city": {"$regex": q, "$options": "i"}},
+        ]
+    users = await db.users.find(query, {"_id": 0, "user_id": 1, "org_profile": 1, "picture": 1}).to_list(length=200)
+    items = []
+    for u in users:
+        op = u.get("org_profile") or {}
+        items.append({
+            "org_id": u["user_id"],
+            "name": op.get("name") or "",
+            "tagline": op.get("tagline") or "",
+            "description": op.get("description") or "",
+            "category": op.get("category") or "other",
+            "country": op.get("country") or "Global",
+            "city": op.get("city") or "Global",
+            "website": op.get("website") or "",
+            "logo_url": op.get("logo_url") or u.get("picture") or "",
+            "verified": bool(op.get("verified")),
+        })
+    return {"orgs": items}
+
+
+@api.get("/orgs/me")
+async def my_org(user: User = Depends(current_user)):
+    return {"role": user.role, "org_profile": user.org_profile}
+
+
+@api.post("/orgs/me")
+async def become_or_update_org(body: OrgProfileIn, user: User = Depends(current_user)):
+    name = (body.name or "").strip()
+    if len(name) < 3:
+        raise HTTPException(status_code=400, detail="Organisation name is too short.")
+    if body.category not in ORG_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid category.")
+    existing = (await db.users.find_one({"user_id": user.user_id}, {"_id": 0}) or {}).get("org_profile") or {}
+    org = {
+        "name": name,
+        "tagline": (body.tagline or "")[:140],
+        "description": (body.description or "")[:1500],
+        "category": body.category,
+        "country": (body.country or "Global").strip() or "Global",
+        "city": (body.city or "Global").strip() or "Global",
+        "website": (body.website or "")[:200],
+        "logo_url": (body.logo_url or "")[:500],
+        "verified": bool(existing.get("verified")),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"role": "org", "org_profile": org}},
+    )
+    return {"ok": True, "role": "org", "org_profile": org}
+
+
+@api.delete("/orgs/me")
+async def retire_org(user: User = Depends(current_user)):
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"role": "member", "org_profile": None}},
+    )
+    return {"ok": True, "role": "member"}
+
+
+@api.get("/orgs/{org_id}")
+async def get_org(org_id: str):
+    u = await db.users.find_one({"user_id": org_id, "role": "org"}, {"_id": 0})
+    if not u or not u.get("org_profile"):
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    op = u["org_profile"]
+    # Org's circles + events
+    circles = await db.communities.find({"created_by": org_id}, {"_id": 0}).sort("created_at", -1).to_list(length=50)
+    events = await db.events.find({"org_id": org_id}, {"_id": 0}).sort("date", 1).to_list(length=50)
+    return {
+        "org_id": org_id,
+        "name": op.get("name") or "",
+        "tagline": op.get("tagline") or "",
+        "description": op.get("description") or "",
+        "category": op.get("category") or "other",
+        "country": op.get("country") or "Global",
+        "city": op.get("city") or "Global",
+        "website": op.get("website") or "",
+        "logo_url": op.get("logo_url") or u.get("picture") or "",
+        "verified": bool(op.get("verified")),
+        "circles": circles,
+        "events": events,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1992,79 +2225,6 @@ async def seed_data():
                 "seed_version": 2,
             }
             for i, (name, city, country, lat, lng, addr) in enumerate(jks, start=1)
-        ])
-        jks = [
-            # Canada
-            ("Ismaili Centre Toronto", "Toronto", "Canada", 49 / 49, 43.7286, -79.3373, "49 Wynford Drive, Toronto"),
-            ("Headquarters Jamatkhana Toronto", "Toronto", "Canada", None, 43.6532, -79.3832, "Downtown Toronto"),
-            ("Bayview Jamatkhana", "Toronto", "Canada", None, 43.7800, -79.3760, "Bayview Ave area, Toronto"),
-            ("Mississauga Jamatkhana", "Mississauga", "Canada", None, 43.5890, -79.6441, "Mississauga, ON"),
-            ("Calgary Jamatkhana", "Calgary", "Canada", None, 51.0447, -114.0719, "Calgary, AB"),
-            ("Edmonton Jamatkhana", "Edmonton", "Canada", None, 53.5461, -113.4938, "Edmonton, AB"),
-            ("Vancouver Jamatkhana (Burnaby)", "Burnaby", "Canada", None, 49.2488, -122.9805, "Burnaby, BC"),
-            ("Ottawa Jamatkhana", "Ottawa", "Canada", None, 45.4215, -75.6972, "Ottawa, ON"),
-            ("Montreal Jamatkhana", "Montreal", "Canada", None, 45.5017, -73.5673, "Montreal, QC"),
-            # United States
-            ("Ismaili Jamatkhana & Center, Plano", "Plano", "United States", None, 33.0198, -96.6989, "Plano, TX"),
-            ("Sugarland Jamatkhana", "Sugar Land", "United States", None, 29.5994, -95.6147, "Sugar Land, TX"),
-            ("Headquarters Jamatkhana Houston", "Houston", "United States", None, 29.7604, -95.3698, "Houston, TX"),
-            ("Atlanta Jamatkhana", "Atlanta", "United States", None, 33.7490, -84.3880, "Atlanta, GA"),
-            ("Manhattan Jamatkhana", "New York", "United States", None, 40.7831, -73.9712, "Upper West Side, NY"),
-            ("Iselin Jamatkhana", "Iselin", "United States", None, 40.5754, -74.3221, "Iselin, NJ"),
-            ("Boston Jamatkhana", "Burlington", "United States", None, 42.5048, -71.1956, "Burlington, MA"),
-            ("Los Angeles Jamatkhana", "Sunset", "United States", None, 34.0982, -118.3267, "Sunset, CA"),
-            ("Bay Area Jamatkhana", "Sunnyvale", "United States", None, 37.3688, -122.0363, "Sunnyvale, CA"),
-            ("Chicago Jamatkhana", "Glenview", "United States", None, 42.0697, -87.7878, "Glenview, IL"),
-            ("Orlando Jamatkhana", "Orlando", "United States", None, 28.5383, -81.3792, "Orlando, FL"),
-            # United Kingdom
-            ("Ismaili Centre London", "London", "United Kingdom", None, 51.4955, -0.1747, "1-7 Cromwell Gardens, London SW7"),
-            ("Aga Khan Centre", "London", "United Kingdom", None, 51.5410, -0.1276, "10 Handyside Street, King's Cross, London"),
-            ("Headquarters Jamatkhana London (South Kensington)", "London", "United Kingdom", None, 51.4955, -0.1747, "South Kensington, London"),
-            ("Hounslow Jamatkhana", "Hounslow", "United Kingdom", None, 51.4685, -0.3614, "Hounslow, London"),
-            ("Manchester Jamatkhana", "Manchester", "United Kingdom", None, 53.4808, -2.2426, "Manchester"),
-            # Portugal
-            ("Ismaili Centre Lisbon", "Lisbon", "Portugal", None, 38.7510, -9.1985, "Av. Lusíada, Lisboa"),
-            # France
-            ("Jamatkhana Paris", "Paris", "France", None, 48.8566, 2.3522, "Paris"),
-            # UAE
-            ("Ismaili Centre Dubai", "Dubai", "UAE", None, 25.2289, 55.3236, "Bur Dubai"),
-            ("Khalifa City Jamatkhana", "Abu Dhabi", "UAE", None, 24.4257, 54.5870, "Khalifa City, Abu Dhabi"),
-            # Kenya & Tanzania
-            ("Headquarters Jamatkhana Nairobi", "Nairobi", "Kenya", None, -1.2864, 36.8172, "Nairobi"),
-            ("Mombasa Jamatkhana", "Mombasa", "Kenya", None, -4.0435, 39.6682, "Mombasa"),
-            ("Dar es Salaam Jamatkhana", "Dar es Salaam", "Tanzania", None, -6.7924, 39.2083, "Dar es Salaam"),
-            # India
-            ("Hasanabad Jamatkhana", "Mumbai", "India", None, 18.9750, 72.8258, "Mazgaon, Mumbai"),
-            ("Darkhana Jamatkhana Mumbai", "Mumbai", "India", None, 18.9388, 72.8354, "Mumbai"),
-            ("Pune Jamatkhana", "Pune", "India", None, 18.5204, 73.8567, "Pune"),
-            ("Ahmedabad Jamatkhana", "Ahmedabad", "India", None, 23.0225, 72.5714, "Ahmedabad"),
-            ("Hyderabad Jamatkhana", "Hyderabad", "India", None, 17.3850, 78.4867, "Hyderabad"),
-            # Pakistan
-            ("Garden Jamatkhana", "Karachi", "Pakistan", None, 24.8693, 67.0231, "Garden, Karachi"),
-            ("Darkhana Jamatkhana Karachi", "Karachi", "Pakistan", None, 24.8607, 67.0011, "Karachi"),
-            ("Lahore Jamatkhana", "Lahore", "Pakistan", None, 31.5204, 74.3587, "Lahore"),
-            ("Islamabad Jamatkhana", "Islamabad", "Pakistan", None, 33.6844, 73.0479, "Islamabad"),
-            ("Hunza Aliabad Jamatkhana", "Hunza", "Pakistan", None, 36.3169, 74.6500, "Aliabad, Hunza"),
-            # Tajikistan / Afghanistan / Syria
-            ("Ismaili Centre Dushanbe", "Dushanbe", "Tajikistan", None, 38.5598, 68.7870, "Dushanbe"),
-            ("Khorog Jamatkhana", "Khorog", "Tajikistan", None, 37.4894, 71.5556, "Khorog, GBAO"),
-            # Bangladesh / Singapore / Australia
-            ("Singapore Jamatkhana", "Singapore", "Singapore", None, 1.3521, 103.8198, "Singapore"),
-            ("Sydney Jamatkhana", "Sydney", "Australia", None, -33.8688, 151.2093, "Sydney"),
-            ("Melbourne Jamatkhana", "Melbourne", "Australia", None, -37.8136, 144.9631, "Melbourne"),
-        ]
-        await db.jamatkhanas.insert_many([
-            {
-                "jk_id": f"jk_{i}",
-                "name": name,
-                "city": city,
-                "country": country,
-                "lat": lat,
-                "lng": lng,
-                "address": addr,
-                "type": "jamatkhana",
-            }
-            for i, (name, city, country, _unused, lat, lng, addr) in enumerate(jks, start=1)
         ])
 
 

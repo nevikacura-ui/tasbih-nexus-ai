@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Sparkles, Heart, BookOpen, HandHeart, Users, Leaf } from "lucide-react";
 import { NoorBackdrop } from "../components/NoorBackdrop";
+import { api } from "../lib/api";
 
 const GOALS = [
   { id: "reflect", label: "Daily reflection", icon: Sparkles },
@@ -30,8 +31,11 @@ export default function OnboardingPage() {
     setGoals((g) => (g.includes(id) ? g.filter((x) => x !== id) : [...g, id]));
 
   const next = () => setStep((s) => Math.min(s + 1, 3));
-  const finish = () => {
+  const finish = async () => {
     sessionStorage.setItem("tasbih_onboarding", JSON.stringify({ goals, mood, city }));
+    if (city && city.trim().length >= 2) {
+      try { await api.post("/profile/city", { city: city.trim() }); } catch (_) {}
+    }
     navigate("/", { replace: true });
   };
 

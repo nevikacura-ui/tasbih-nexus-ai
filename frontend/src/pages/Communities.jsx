@@ -115,9 +115,12 @@ export default function CommunitiesPage() {
                   <Users className="h-6 w-6 text-gold" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-deep">{c.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-deep">{c.name}</p>
+                    {c.official && <span className="bg-gold-gradient text-deep rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wider">{c.verified ? "Official ✓" : "Official"}</span>}
+                  </div>
                   <p className="mt-0.5 flex items-center gap-1 text-xs text-deep/55">
-                    <MapPin className="h-3 w-3" /> {c.city} · {c.members} members
+                    <MapPin className="h-3 w-3" /> {c.city} · {c.members} members{c.org_name ? ` · by ${c.org_name}` : ""}
                   </p>
                   <p className="mt-2 line-clamp-2 text-xs text-deep/70">{c.description}</p>
                 </div>
@@ -175,10 +178,13 @@ function CreateCircleModal({ onClose, onCreated }) {
   const [categories, setCategories] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [asOrg, setAsOrg] = useState(false);
+  const [orgName, setOrgName] = useState("");
 
   useEffect(() => {
     (async () => {
       try { const r = await api.get("/communities/categories"); setCategories(r.data.categories || []); } catch (e) {}
+      try { const r = await api.get("/orgs/me"); if (r.data.role === "org") setOrgName(r.data.org_profile?.name || ""); } catch (_) {}
     })();
   }, []);
 
@@ -192,6 +198,7 @@ function CreateCircleModal({ onClose, onCreated }) {
         country: country.trim() || "Global",
         city: city.trim() || "Global",
         description: description.trim(),
+        as_org: asOrg,
       });
       onCreated();
     } catch (e) { setErr(e?.response?.data?.detail || "Could not create."); }
@@ -221,6 +228,12 @@ function CreateCircleModal({ onClose, onCreated }) {
             <input data-testid="cc-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
           </div>
           <textarea data-testid="cc-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="What is this circle for? Who is welcome?" className="w-full resize-none rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
+          {orgName && (
+            <label data-testid="cc-as-org" className="flex items-center gap-2 rounded-2xl bg-sand/40 px-3 py-2 text-[11px] text-deep/70">
+              <input type="checkbox" checked={asOrg} onChange={(e) => setAsOrg(e.target.checked)} className="accent-gold" />
+              Create as <strong className="text-deep">{orgName}</strong> · circle will be marked official
+            </label>
+          )}
         </div>
         {err && <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>}
         <button data-testid="cc-save" onClick={save} disabled={busy} className="bg-emerald-gradient text-ivory shadow-elegant mt-4 w-full rounded-full py-3 text-sm font-medium tap-scale disabled:opacity-50">

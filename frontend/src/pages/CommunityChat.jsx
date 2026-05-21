@@ -279,11 +279,17 @@ function FeedView({ id, joined, user }) {
   const [posts, setPosts] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [asOrg, setAsOrg] = useState(false);
+  const [orgName, setOrgName] = useState("");
 
   const load = async () => {
     try { const r = await api.get(`/communities/${id}/posts`); setPosts(r.data.posts || []); } catch (e) {}
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { (async () => {
+    try { const r = await api.get("/orgs/me"); if (r.data.role === "org") setOrgName(r.data.org_profile?.name || ""); }
+    catch (_) {}
+  })(); }, []);
 
   const post = async () => {
     const t = text.trim();
@@ -291,7 +297,7 @@ function FeedView({ id, joined, user }) {
     if (!joined) { try { await api.post(`/communities/${id}/join`); } catch (e) {} }
     setBusy(true);
     try {
-      const r = await api.post(`/communities/${id}/posts`, { text: t });
+      const r = await api.post(`/communities/${id}/posts`, { text: t, as_org: asOrg });
       setPosts((p) => [r.data, ...p]);
       setText("");
     } finally { setBusy(false); }
@@ -308,7 +314,13 @@ function FeedView({ id, joined, user }) {
           placeholder="Share a thought, a verse, a quiet question…"
           className="w-full resize-none rounded-2xl border border-deep/10 bg-white/60 px-3 py-2 text-sm text-deep outline-none focus:border-gold placeholder:text-deep/40"
         />
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex items-center justify-between">
+          {orgName ? (
+            <label data-testid="post-as-org" className="flex items-center gap-1.5 text-[11px] text-deep/65">
+              <input type="checkbox" checked={asOrg} onChange={(e) => setAsOrg(e.target.checked)} className="accent-gold" />
+              Post as <strong className="text-deep">{orgName}</strong>
+            </label>
+          ) : <span />}
           <button
             data-testid="post-submit"
             onClick={post}
@@ -374,7 +386,12 @@ function PostCard({ p, user, refresh }) {
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-deep">{p.author_name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium text-deep">{p.author_name}</p>
+              {p.author_kind === "org" && (
+                <span className="bg-emerald-gradient text-gold rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-wider">Org{p.verified ? " · ✓" : ""}</span>
+              )}
+            </div>
             <p className="text-[10px] text-deep/45">
               {p.created_at ? new Date(p.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : ""}
             </p>

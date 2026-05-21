@@ -110,6 +110,23 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Noor Digest — weekly Sunday reflection */}
+        <section className="mt-5 px-5">
+          <Link to="/noor/digest" data-testid="home-digest-card" className="glass tap-scale block rounded-2xl p-4 shadow-soft">
+            <div className="flex items-center gap-3">
+              <div className="bg-gold-gradient flex h-10 w-10 items-center justify-center rounded-full">
+                <Sparkles className="h-4 w-4 text-deep" />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-gold">Sunday reflection</p>
+                <p className="text-sm font-medium text-deep">Your Noor Digest is ready</p>
+                <p className="text-[11px] text-deep/55">A gentle 4-sentence summary of your week</p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-deep/45" />
+            </div>
+          </Link>
+        </section>
+
         {/* Rituals */}
         <section className="mt-6 px-5">
           <div className="grid grid-cols-3 gap-3">

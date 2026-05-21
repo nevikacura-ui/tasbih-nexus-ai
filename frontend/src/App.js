@@ -22,6 +22,10 @@ import MentorsPage from "./pages/Mentors";
 import KhidmahPage from "./pages/Khidmah";
 import JamatkhanaPage from "./pages/Jamatkhana";
 import NotificationsPage from "./pages/Notifications";
+import SangatPage from "./pages/Sangat";
+import OrgsPage from "./pages/Orgs";
+import OrgProfilePage from "./pages/OrgProfile";
+import NoorDigestPage from "./pages/NoorDigest";
 
 function Protected({ children }) {
   // Non-blocking: always render. Auth happens in background and pages handle
@@ -50,6 +54,10 @@ function Router() {
       <Route path="/khidmah" element={<Protected><KhidmahPage /></Protected>} />
       <Route path="/jamatkhana" element={<Protected><JamatkhanaPage /></Protected>} />
       <Route path="/notifications" element={<Protected><NotificationsPage /></Protected>} />
+      <Route path="/sangat" element={<Protected><SangatPage /></Protected>} />
+      <Route path="/orgs" element={<Protected><OrgsPage /></Protected>} />
+      <Route path="/orgs/me" element={<Protected><OrgProfilePage /></Protected>} />
+      <Route path="/noor/digest" element={<Protected><NoorDigestPage /></Protected>} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
       <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />
