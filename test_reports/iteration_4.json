@@ -1,0 +1,36 @@
+{
+  "summary": "Tasbih.ai /dua Holy-Du'a refactor verified end-to-end. Backend: 15/15 new pytest cases pass in 1.69s — /api/dua returns exactly 110 items across 6 distinct rakaats (1..6) with required shape {id, rakaat, order, situation, title, transliteration, english, arabic}; first item (sorted by rakaat,order) is r1_01_bismillah with transliteration 'Bismillāhir-Rahmānir-Raheem'; zero occurrences of 'Karim/Kareem' anywhere in dua content (case-insensitive word-boundary scan of every string field); 'Shah Rahim al-Husayni' appears in content; /api/dua?situation=rakaat-N returns only items where rakaat==N for all N in 1..6; /api/dua/r1_01_bismillah returns 200, /api/dua/does_not_exist returns 404; credit string mentions Naushad & Shabnam Patel. Regressions: /api/ginan exposes the renamed 'eji_sahebjī_tum_rahim' (old 'eji_sahebjī_tum_kareem' absent); /api/family-corner returns prompts+stages; /api/health and /api/auth/otp/send respond without 5xx. Frontend (414x896 mobile viewport, /dua route, Protected wrapper is non-blocking so the page renders without auth): full-bleed Instagram-style snap-scroll renders correctly; first card shows large transliteration on top, English below, 'Tap for Arabic' pill bottom-left, '01 / 110' counter bottom-right, 'Rakaat I' indicator top-right, back arrow top-left routing to /profile; Arabic modal opens on tap, renders بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ with dir=rtl and closes correctly; floating filter button (bottom-right gold pill) opens a bottom sheet with 6 rakaat tiles, tapping rakaat-3 closes the sheet AND scroll-snaps to Rakaat III (top indicator updates to 'Rakaat III'); scroller has scrollHeight≈99456 (111 cards × ~896 = 110 dua + 1 credit) so snap math is correct; scrolling to the end reveals the credit card with 'Curated by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India' and a 'Sit with Noor' CTA linking to /noor. Each rakaat uses a distinct cinematic gradient (emerald → teal → plum → ruby → olive → blue). Bottom-nav correctly absent on this immersive route (no MobileShell wrapper). Fixed one trivial SVG attribute typo (preserveAspectRatio='xMidYEnd slice' → 'xMidYMax slice') which was throwing 100+ console errors per page render but did not break functionality; console is now clean.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_dua_rakaat.py",
+    "/app/test_reports/pytest/dua_rakaat_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Dua.jsx (~430 lines): clean, single-file, well-organised. RAKAAT_THEMES dictionary cleanly drives gradients + accent colours. IntersectionObserver-based rakaat tracking uses threshold 0.6 + observer cleanup on unmount — solid.",
+    "DuaCard is a child component but defined in the same file; given the file is well under 700 lines this is fine — splitting would be premature.",
+    "Filter sheet backdrop uses outer-onClick to close + inner stopPropagation — correct pattern. data-testids are present on every interactive element (dua-back, dua-filter-toggle, dua-filter-sheet, dua-filter-close, dua-filter-rakaat-{n}, dua-arabic-btn-{id}, dua-arabic-modal, dua-arabic-close, dua-arabic-text, dua-credit, dua-credit-noor, dua-current-rakaat, dua-counter-{id}, dua-translit-{id}, dua-english-{id}, dua-rakaat-tag-{id}, dua-card-{id}, dua-scroller, dua-page, dua-loading).",
+    "Backend list_dua filter uses 'in (situation + title).lower()' — works for 'rakaat-3' because the situation field literally is 'rakaat-3'. Cheap and correct.",
+    "content.py: 110 items with id pattern r{rakaat}_{order:02d}_{slug} is consistent. 'Karim/Kareem' fully purged from dua + ginan content per user instruction (Aga Khan V transition). Verified by word-boundary regex scan over every string value.",
+    "server.py is now 3111 lines (was 2995). Still over the 700-line guideline — flagged in prior iterations. No regression introduced by this sprint; /api/dua endpoint signature unchanged."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_dua_rakaat.py",
+    "/app/frontend/src/pages/Dua.jsx"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (18/18 functional checks; one flake on Arabic modal in long sequential script was confirmed false-positive — modal works in isolation and after the short retest)"},
+  "test_credentials": "Not required for this sprint — /dua route is publicly reachable because Protected({children}) is a no-op pass-through in App.js (intentional per code comment).",
+  "seed_data_creation": "None. All tests are read-only against the static content.py DUA list.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite for /api/dua lives in /app/backend/tests/test_dua_rakaat.py — keep it green when content.py is edited. The 'Karim/Kareem' word-boundary test will flag any reversion of the Aga Khan V rename. /dua page is full-immersive (no MobileShell, no bottom-nav) — back button goes to /profile, not the app shell. Snap-scroller is at [data-testid='dua-scroller']; programmatic scroll requires scrolling that element, not window. Arabic modal selector races can happen in long sequential Playwright scripts if force=True is used immediately after a state-setting click — prefer a non-force click on dua-arabic-btn-{id} or insert a 300ms wait after the click. Fixed SVG attr typo (xMidYEnd → xMidYMax); console is now clean. Only known pre-existing concern: server.py is 3111 lines — maintainability, not functional.",
+  "rca of the issue": "Single transient Playwright failure on Arabic modal during the long sequential script was a force=True click timing race, not a real bug. Re-ran the modal flow in isolation: button bbox (28, 732, 138×36) does not overlap filter button bbox (346, 820, 48×48); non-force click opened the modal, Arabic text rendered as بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ with dir=rtl, dua-arabic-close removed it from the DOM. No code change needed for the modal. Separately, fixed cosmetic console-noise from invalid SVG preserveAspectRatio enum 'xMidYEnd slice' → 'xMidYMax slice' in MosqueSilhouette."
+}
