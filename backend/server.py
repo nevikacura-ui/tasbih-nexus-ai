@@ -153,7 +153,9 @@ async def health():
 
 @api.post("/invite/verify")
 async def verify_invites(body: InviteVerifyRequest):
-    """Validate that BOTH invite codes are real and unused, BEFORE OAuth."""
+    """Validate that BOTH invite codes are real, unused, AND issued by two
+    different inviters (founder codes are exempt — they're the bootstrap pool).
+    """
     code1 = body.code1.strip().upper()
     code2 = body.code2.strip().upper()
     if not code1 or not code2 or code1 == code2:
@@ -165,7 +167,15 @@ async def verify_invites(body: InviteVerifyRequest):
             raise HTTPException(status_code=400, detail=f"Invitation code '{c}' is not recognised.")
         if found[c].get("used_by"):
             raise HTTPException(status_code=400, detail=f"Invitation code '{c}' has already been used.")
-    # Stash a short-lived pending token so OAuth callback can confirm both codes were verified
+    # Two-different-issuer rule (community vouching). Founder codes bypass.
+    d1, d2 = found[code1], found[code2]
+    is_founder = bool(d1.get("founder")) or bool(d2.get("founder"))
+    if not is_founder and d1.get("issued_by") == d2.get("issued_by"):
+        raise HTTPException(
+            status_code=400,
+            detail="Both invitation codes must come from two different members. Ask another friend in the jamat for the second code.",
+        )
+    # Stash a short-lived pending token so OAuth/registration can confirm both codes were verified
     pending_token = uuid.uuid4().hex
     await db.pending_invites.insert_one({
         "pending_token": pending_token,
@@ -245,7 +255,7 @@ async def auth_session(request: Request, response: Response):
         {"$set": {
             "user_id": user["user_id"],
             "session_token": session_token,
-            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
             "created_at": datetime.now(timezone.utc),
         }},
         upsert=True,
@@ -282,7 +292,7 @@ async def auth_guest(response: Response):
         "city": None,
         "invite_codes_used": [],
         "referrals_received": 0,
-        "invites_available": 0,
+        "invites_available": 3,
         "created_at": datetime.now(timezone.utc),
     }
     await db.users.insert_one(dict(user))
@@ -312,6 +322,161 @@ async def auth_guest(response: Response):
 @api.get("/auth/me", response_model=User)
 async def auth_me(user: User = Depends(current_user)):
     return user
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MSG91 WhatsApp OTP — phone+email registration after invite verify
+# Required env vars: MSG91_AUTH_KEY, MSG91_OTP_TEMPLATE_ID (created in MSG91 dashboard)
+# ──────────────────────────────────────────────────────────────────────────────
+MSG91_AUTH_KEY = os.environ.get("MSG91_AUTH_KEY", "")
+MSG91_OTP_TEMPLATE_ID = os.environ.get("MSG91_OTP_TEMPLATE_ID", "")
+
+
+class OtpSendIn(BaseModel):
+    pending_token: str
+    email: str
+    phone: str  # E.164 with leading + (e.g. +918108888330)
+
+
+class OtpVerifyIn(BaseModel):
+    pending_token: str
+    email: str
+    phone: str
+    otp: str
+    name: Optional[str] = None
+
+
+def _normalize_phone(p: str) -> str:
+    """Strip everything but digits — MSG91 expects country-code without '+'."""
+    digits = "".join(ch for ch in (p or "") if ch.isdigit())
+    return digits
+
+
+@api.post("/auth/otp/send")
+async def auth_otp_send(body: OtpSendIn):
+    """Send a 6-digit OTP via MSG91 (WhatsApp primary, SMS fallback).
+    Requires a still-valid pending_token from /invite/verify.
+    """
+    if not MSG91_AUTH_KEY:
+        raise HTTPException(status_code=500, detail="OTP service not configured (MSG91_AUTH_KEY missing).")
+    if not MSG91_OTP_TEMPLATE_ID:
+        raise HTTPException(status_code=500, detail="OTP service not configured (MSG91_OTP_TEMPLATE_ID missing).")
+    email = (body.email or "").strip().lower()
+    phone = _normalize_phone(body.phone)
+    if "@" not in email or len(email) < 5:
+        raise HTTPException(status_code=400, detail="Please enter a valid email.")
+    if len(phone) < 8 or len(phone) > 15:
+        raise HTTPException(status_code=400, detail="Please enter a valid phone number with country code.")
+    pending = await db.pending_invites.find_one({"pending_token": body.pending_token}, {"_id": 0})
+    if not pending:
+        raise HTTPException(status_code=403, detail="Invitation expired. Please re-enter codes.")
+    # Already-registered email/phone? Allow login (no new account); we'll still verify OTP.
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.post(
+                "https://control.msg91.com/api/v5/otp",
+                params={"mobile": phone, "authkey": MSG91_AUTH_KEY, "template_id": MSG91_OTP_TEMPLATE_ID},
+                headers={"Content-Type": "application/json"},
+            )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+        ok = r.status_code < 400 and "success" in str(data.get("type", "")).lower()
+        if not ok:
+            logger.warning(f"msg91 send failed: status={r.status_code} body={data}")
+            raise HTTPException(status_code=502, detail=f"Could not send OTP. {data.get('message') or 'Try again shortly.'}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"msg91 send exception: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach OTP service. Try again.")
+    # Stash registration intent on the pending doc
+    await db.pending_invites.update_one(
+        {"pending_token": body.pending_token},
+        {"$set": {"email": email, "phone": phone, "otp_sent_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "channel": "whatsapp", "sent_to": phone}
+
+
+@api.post("/auth/otp/verify")
+async def auth_otp_verify(body: OtpVerifyIn, response: Response):
+    """Verify the OTP with MSG91 and finalize registration with a 90-day session."""
+    if not MSG91_AUTH_KEY:
+        raise HTTPException(status_code=500, detail="OTP service not configured.")
+    email = (body.email or "").strip().lower()
+    phone = _normalize_phone(body.phone)
+    otp = (body.otp or "").strip()
+    if not otp or len(otp) < 4:
+        raise HTTPException(status_code=400, detail="Please enter the verification code.")
+    pending = await db.pending_invites.find_one({"pending_token": body.pending_token}, {"_id": 0})
+    if not pending:
+        raise HTTPException(status_code=403, detail="Invitation expired. Please re-enter codes.")
+    # Verify OTP with MSG91
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.get(
+                "https://control.msg91.com/api/v5/otp/verify",
+                params={"mobile": phone, "otp": otp, "authkey": MSG91_AUTH_KEY},
+            )
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+    except Exception as e:
+        logger.warning(f"msg91 verify exception: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach OTP service. Try again.")
+    if r.status_code >= 400 or "success" not in str(data.get("type", "")).lower():
+        msg = data.get("message") or "Invalid or expired code."
+        raise HTTPException(status_code=400, detail=str(msg))
+
+    # Confirm invite codes still valid + consume them on first registration
+    codes = [pending.get("code1"), pending.get("code2")]
+    code_docs = await db.invite_codes.find({"code": {"$in": codes}}, {"_id": 0}).to_list(length=10)
+
+    user = await db.users.find_one({"$or": [{"email": email}, {"phone": phone}]}, {"_id": 0})
+    if not user:
+        # New signup — codes must still be unused
+        if len(code_docs) != 2 or any(c.get("used_by") for c in code_docs):
+            raise HTTPException(status_code=403, detail="Invitation codes are no longer valid.")
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        user = {
+            "user_id": user_id,
+            "email": email,
+            "phone": phone,
+            "name": (body.name or email.split("@")[0]).strip()[:80],
+            "picture": None,
+            "status": "member",
+            "city": None,
+            "invite_codes_used": codes,
+            "referrals_received": 2,
+            "invites_available": 3,
+            "role": "member",
+            "created_at": datetime.now(timezone.utc),
+        }
+        await db.users.insert_one(dict(user))
+        await db.invite_codes.update_many(
+            {"code": {"$in": codes}},
+            {"$set": {"used_by": user_id, "used_at": datetime.now(timezone.utc)}},
+        )
+    # 90-day session
+    session_token = f"sess_{uuid.uuid4().hex}"
+    await db.user_sessions.insert_one({
+        "user_id": user["user_id"],
+        "session_token": session_token,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
+        "created_at": datetime.now(timezone.utc),
+    })
+    await db.pending_invites.delete_one({"pending_token": body.pending_token})
+    response.set_cookie(
+        key="session_token", value=session_token,
+        max_age=90 * 24 * 60 * 60, httponly=True, secure=True, samesite="none", path="/",
+    )
+    return {
+        "ok": True,
+        "session_token": session_token,
+        "user": {k: user.get(k) for k in ("user_id", "email", "phone", "name", "status", "city")},
+    }
 
 
 @api.get("/auth/token")
@@ -348,15 +513,26 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
 # ──────────────────────────────────────────────────────────────────────────────
 @api.get("/invites/mine")
 async def list_my_invites(user: User = Depends(current_user)):
-    codes = await db.invite_codes.find({"issued_by": user.user_id}, {"_id": 0}).to_list(length=200)
-    return {"codes": codes, "available": user.invites_available}
+    codes = await db.invite_codes.find({"issued_by": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
+    return {"codes": codes, "available": "unlimited"}
+
+
+_INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I for legibility
+
+
+def _gen_invite_code() -> str:
+    import secrets
+    return "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(8))
 
 
 @api.post("/invites/create")
 async def create_invite(user: User = Depends(current_user)):
-    if user.invites_available <= 0:
-        raise HTTPException(status_code=400, detail="No invitations remaining.")
-    code = "NOOR-" + uuid.uuid4().hex[:6].upper()
+    # Unlimited invitation generation — every member can invite as many as they wish.
+    # Generate unique alphanumeric 8-char code
+    for _ in range(8):
+        code = _gen_invite_code()
+        if not await db.invite_codes.find_one({"code": code}, {"_id": 0}):
+            break
     doc = {
         "code": code,
         "issued_by": user.user_id,
@@ -364,7 +540,6 @@ async def create_invite(user: User = Depends(current_user)):
         "created_at": datetime.now(timezone.utc),
     }
     await db.invite_codes.insert_one(dict(doc))
-    await db.users.update_one({"user_id": user.user_id}, {"$inc": {"invites_available": -1}})
     return {"code": code}
 
 
@@ -669,6 +844,76 @@ async def send_message(community_id: str, body: ChatMessageIn, user: User = Depe
         "created_at": datetime.now(timezone.utc),
     }
     await db.chat_messages.insert_one(dict(msg))
+    return msg
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Noor Moment — a unique chat feature.
+# Any member can invoke Noor AI to drop a single short calming reflection
+# into the live chat, visible to everyone. Rate-limited to 1 per minute per
+# community to keep the AI presence rare and meaningful.
+# ──────────────────────────────────────────────────────────────────────────────
+NOOR_MOMENT_PROMPTS = [
+    "Drop a 1-2 sentence calm Ginanic-tone reflection for a group of friends gathered in conversation. Tone: warm, quiet, never preachy.",
+    "Offer a 1-2 sentence soft pause — like a gentle breath taken together. No religious instruction.",
+    "Share a 1-2 sentence reminder about kindness or patience, drawn lightly from Ismaili pluralist wisdom.",
+    "Whisper a 1-2 sentence reflection on listening — what it means to truly hear another. No fatwa.",
+    "Bring a 1-2 sentence gratitude prompt to the conversation, gentle and grounding.",
+]
+
+
+@api.post("/communities/{community_id}/noor-moment")
+async def noor_moment(community_id: str, user: User = Depends(current_user)):
+    comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
+    if not comm:
+        raise HTTPException(status_code=404, detail="Community not found")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="Noor is offline right now.")
+    # Per-community rate-limit: 1 noor moment per 60 seconds
+    last = await db.chat_messages.find_one(
+        {"community_id": community_id, "kind": "noor_moment"},
+        {"_id": 0, "created_at": 1},
+        sort=[("created_at", -1)],
+    )
+    if last:
+        last_ts = last.get("created_at")
+        if isinstance(last_ts, str):
+            last_ts = datetime.fromisoformat(last_ts)
+        if last_ts and last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        if last_ts and (datetime.now(timezone.utc) - last_ts).total_seconds() < 60:
+            secs = 60 - int((datetime.now(timezone.utc) - last_ts).total_seconds())
+            raise HTTPException(status_code=429, detail=f"Noor is still resting. Try again in {secs}s.")
+    import random
+    prompt = random.choice(NOOR_MOMENT_PROMPTS)
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"noor_moment_{community_id}",
+            system_message=NOOR_SYSTEM_PROMPT,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reflection = await chat.send_message(UserMessage(text=prompt))
+        reflection = (reflection or "").strip()
+        if len(reflection) > 360:
+            reflection = reflection[:357].rstrip() + "…"
+    except Exception as e:
+        logger.warning(f"noor moment failed: {e}")
+        reflection = "A gentle pause for all of us. Breathe — three slow breaths together."
+    msg = {
+        "message_id": f"msg_{uuid.uuid4().hex[:12]}",
+        "community_id": community_id,
+        "user_id": "noor",
+        "author_name": "Noor",
+        "kind": "noor_moment",
+        "invoked_by": user.user_id,
+        "invoked_by_name": user.name,
+        "text": reflection,
+        "created_at": datetime.now(timezone.utc),
+    }
+    await db.chat_messages.insert_one(dict(msg))
+    # Broadcast over WebSocket so all open clients see it instantly
+    payload = {**msg, "created_at": msg["created_at"].isoformat(), "type": "message"}
+    await hub.broadcast(community_id, payload)
     return msg
 
 
@@ -2044,23 +2289,265 @@ async def get_org(org_id: str):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Quran reader — authentic text via alquran.cloud (free, no key)
+# ──────────────────────────────────────────────────────────────────────────────
+QURAN_EDITIONS = {
+    "ar":  "quran-uthmani",          # always returned
+    "en":  "en.sahih",                # Sahih International (recognised authentic English)
+    "en2": "en.asad",                 # Muhammad Asad
+    "ur":  "ur.jalandhry",            # Fateh Muhammad Jalandhry
+    "fr":  "fr.hamidullah",
+    "tr":  "tr.diyanet",
+    "id":  "id.indonesian",
+    "ru":  "ru.kuliev",
+    "es":  "es.cortes",
+    "de":  "de.aburida",
+}
+QURAN_LANG_LABELS = {
+    "en": "English (Sahih International)",
+    "en2": "English (Muhammad Asad)",
+    "ur": "اردو (Urdu)",
+    "fr": "Français",
+    "tr": "Türkçe",
+    "id": "Bahasa Indonesia",
+    "ru": "Русский",
+    "es": "Español",
+    "de": "Deutsch",
+}
+
+
+@api.get("/quran/surahs")
+async def quran_surahs():
+    cached = await db.quran_cache.find_one({"key": "surah_list"}, {"_id": 0})
+    if cached and cached.get("data"):
+        return {"surahs": cached["data"]}
+    try:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.get("https://api.alquran.cloud/v1/surah")
+            r.raise_for_status()
+            data = r.json().get("data") or []
+    except Exception as e:
+        logger.warning(f"quran list failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not load Quran index.")
+    surahs = [{
+        "number": s["number"],
+        "name": s["name"],
+        "english_name": s["englishName"],
+        "english_translation": s["englishNameTranslation"],
+        "revelation_type": s["revelationType"],
+        "ayah_count": s["numberOfAyahs"],
+    } for s in data]
+    await db.quran_cache.update_one({"key": "surah_list"}, {"$set": {"key": "surah_list", "data": surahs, "ts": datetime.now(timezone.utc)}}, upsert=True)
+    return {"surahs": surahs}
+
+
+@api.get("/quran/languages")
+async def quran_languages():
+    return {"languages": [{"id": k, "label": v} for k, v in QURAN_LANG_LABELS.items()]}
+
+
+@api.get("/quran/surah/{number}")
+async def quran_surah(number: int, lang: str = "en"):
+    if number < 1 or number > 114:
+        raise HTTPException(status_code=400, detail="Surah number must be 1-114.")
+    lang = lang if lang in QURAN_EDITIONS else "en"
+    ed = QURAN_EDITIONS[lang]
+    cache_key = f"surah_{number}_{lang}"
+    cached = await db.quran_cache.find_one({"key": cache_key}, {"_id": 0})
+    if cached and cached.get("data"):
+        return cached["data"]
+    try:
+        async with httpx.AsyncClient(timeout=20) as hc:
+            r = await hc.get(f"https://api.alquran.cloud/v1/surah/{number}/editions/quran-uthmani,{ed}")
+            r.raise_for_status()
+            arr = r.json().get("data") or []
+    except Exception as e:
+        logger.warning(f"quran surah {number} {lang} failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not load surah right now.")
+    if len(arr) < 2:
+        raise HTTPException(status_code=502, detail="Translation unavailable.")
+    ar = arr[0]
+    tr = arr[1]
+    ayahs = []
+    for i, a_ar in enumerate(ar.get("ayahs") or []):
+        a_tr = tr["ayahs"][i] if i < len(tr.get("ayahs") or []) else {}
+        ayahs.append({
+            "number": a_ar.get("numberInSurah"),
+            "ar": a_ar.get("text") or "",
+            "tr": a_tr.get("text") or "",
+            "juz": a_ar.get("juz"),
+            "sajda": bool(a_ar.get("sajda") and a_ar["sajda"] is not False),
+        })
+    doc = {
+        "number": ar.get("number"),
+        "name": ar.get("name"),
+        "english_name": ar.get("englishName"),
+        "english_translation": ar.get("englishNameTranslation"),
+        "revelation_type": ar.get("revelationType"),
+        "language": lang,
+        "language_label": QURAN_LANG_LABELS.get(lang, lang),
+        "translator": tr.get("edition", {}).get("englishName") if isinstance(tr.get("edition"), dict) else None,
+        "ayah_count": ar.get("numberOfAyahs"),
+        "ayahs": ayahs,
+    }
+    await db.quran_cache.update_one({"key": cache_key}, {"$set": {"key": cache_key, "data": doc, "ts": datetime.now(timezone.utc)}}, upsert=True)
+    return doc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Ismaili Calendar — fixed dates + Hijri-derived important dates + Chandraat
+# ──────────────────────────────────────────────────────────────────────────────
+from hijri_converter import Hijri, Gregorian  # noqa: E402
+
+# Gregorian-fixed events (same date every year)
+GREGORIAN_EVENTS = [
+    {"id": "salgirah", "month": 12, "day": 13, "title": "Salgirah", "subtitle": "Birthday of His Highness the Aga Khan", "kind": "imamat", "reflection": "A day of gratitude — for vision held over decades, and the soft thread of guidance that binds the global jamat."},
+    {"id": "imamat_day", "month": 7, "day": 11, "title": "Imamat Day", "subtitle": "Accession of His Highness", "kind": "imamat", "reflection": "Remembering the unbroken thread of light — from Hazrat Ali to today's Imam. A quiet recommitment to seva and pluralism."},
+    {"id": "navroz", "month": 3, "day": 21, "title": "Navroz", "subtitle": "New Year of renewal", "kind": "festival", "reflection": "A new spring of the soul. Pause, set one gentle intention for the year, and reach out to a loved one."},
+    {"id": "didar_day", "month": 7, "day": 1, "title": "Diamond Jubilee remembrance", "subtitle": "A milestone of giving", "kind": "imamat", "reflection": "Remembering decades of khidmah, education, and the soft work of building a better world."},
+]
+
+# Hijri-fixed events (Hijri month, day)
+HIJRI_EVENTS = [
+    {"id": "ashura", "h_month": 1, "h_day": 10, "title": "Yawm-e-Ashura", "subtitle": "10 Muharram — remembrance of Imam Hussein", "kind": "remembrance", "reflection": "A day held tenderly across centuries. Sit with the weight of sacrifice; let it soften you toward those who suffer today."},
+    {"id": "yawm_e_ali", "h_month": 7, "h_day": 13, "title": "Yawm-e-Ali", "subtitle": "Birth of Hazrat Ali (a.s.)", "kind": "imamat", "reflection": "Reflect on the courage and intellect (ʿaql) embodied by Mawla Ali — and how that light still walks through the present Imam."},
+    {"id": "ramadan_start", "h_month": 9, "h_day": 1, "title": "1st of Ramadan", "subtitle": "The quiet month begins", "kind": "fasting", "reflection": "A month of stillness, restraint and remembrance. Begin gently — even one sincere intention is enough."},
+    {"id": "laylat_qadr", "h_month": 9, "h_day": 27, "title": "Lailat-ul-Qadr", "subtitle": "Night of Power (commonly observed)", "kind": "fasting", "reflection": "On this hush of a night, mercy is closer than usual. Whisper one honest dua and let it rest."},
+    {"id": "eid_fitr", "h_month": 10, "h_day": 1, "title": "Eid-ul-Fitr", "subtitle": "Celebration after Ramadan", "kind": "festival", "reflection": "Joy carried gently. Share a meal, mend a small distance, and remember those without one today."},
+    {"id": "hajj", "h_month": 12, "h_day": 9, "title": "Day of Arafah", "subtitle": "Hajj day of standing", "kind": "remembrance", "reflection": "A day of presence and humility before the One. Wherever you are, stand still for a moment."},
+    {"id": "eid_adha", "h_month": 12, "h_day": 10, "title": "Eid-ul-Adha", "subtitle": "Festival of sacrifice", "kind": "festival", "reflection": "What are you being asked to release this year? Sacrifice rarely looks how we expect."},
+    {"id": "eid_ghadir", "h_month": 12, "h_day": 18, "title": "Eid-e-Ghadir", "subtitle": "Designation of Mawla Ali at Ghadir Khumm", "kind": "imamat", "reflection": "The beginning of the visible thread of Imamat — a designation of love and trust, still alive today."},
+]
+
+
+def _gregorian_to_hijri(y: int, m: int, d: int):
+    try:
+        h = Gregorian(y, m, d).to_hijri()
+        return {"year": h.year, "month": h.month, "day": h.day, "month_name": h.month_name(), "day_name": h.day_name()}
+    except Exception:
+        return None
+
+
+def _hijri_to_gregorian(hy: int, hm: int, hd: int):
+    try:
+        g = Hijri(hy, hm, hd).to_gregorian()
+        return datetime(g.year, g.month, g.day, tzinfo=timezone.utc).date()
+    except Exception:
+        return None
+
+
+def _chandraat_for_hijri_month(hy: int, hm: int):
+    """Chandraat = evening before the 1st of a Hijri month (sighting of the new crescent).
+    We mark the Gregorian date corresponding to the LAST day of the PREVIOUS Hijri month."""
+    prev_m = hm - 1 if hm > 1 else 12
+    prev_y = hy if hm > 1 else hy - 1
+    # Hijri months are 29 or 30 days; we ask the converter which one
+    for last_day in (30, 29):
+        try:
+            h = Hijri(prev_y, prev_m, last_day)
+            g = h.to_gregorian()
+            return datetime(g.year, g.month, g.day, tzinfo=timezone.utc).date()
+        except Exception:
+            continue
+    return None
+
+
+def _events_in_range(start_date, end_date):
+    """Compute every Ismaili-significant event between two dates (inclusive)."""
+    events = []
+    cursor = start_date
+    while cursor <= end_date:
+        y, m, d = cursor.year, cursor.month, cursor.day
+        # Gregorian-fixed
+        for e in GREGORIAN_EVENTS:
+            if e["month"] == m and e["day"] == d:
+                events.append({**e, "date": cursor.isoformat()})
+        # Hijri-fixed (convert today's Hijri date, match against HIJRI_EVENTS)
+        h = _gregorian_to_hijri(y, m, d)
+        if h:
+            for e in HIJRI_EVENTS:
+                if h["month"] == e["h_month"] and h["day"] == e["h_day"]:
+                    events.append({**e, "date": cursor.isoformat(), "hijri": h})
+            # Chandraat = last day of a Hijri month
+            try:
+                next_day = cursor + timedelta(days=1)
+                h2 = _gregorian_to_hijri(next_day.year, next_day.month, next_day.day)
+                if h2 and h2["day"] == 1:
+                    events.append({
+                        "id": f"chandraat_{h2['year']}_{h2['month']}",
+                        "title": "Chandraat",
+                        "subtitle": f"Eve of {h2['month_name']} {h2['year']} AH",
+                        "kind": "chandraat",
+                        "reflection": "The new moon arrives. A quiet pause before the next chapter — bring your heart in.",
+                        "date": cursor.isoformat(),
+                        "hijri": h,
+                    })
+            except Exception:
+                pass
+        cursor = cursor + timedelta(days=1)
+    return events
+
+
+@api.get("/calendar/today")
+async def calendar_today():
+    today = datetime.now(timezone.utc).date()
+    h = _gregorian_to_hijri(today.year, today.month, today.day)
+    horizon = today + timedelta(days=14)
+    upcoming = _events_in_range(today, horizon)
+    return {
+        "today": today.isoformat(),
+        "hijri": h,
+        "upcoming": upcoming,
+    }
+
+
+@api.get("/calendar/month")
+async def calendar_month(year: int, month: int):
+    if not (2024 <= year <= 2100 and 1 <= month <= 12):
+        raise HTTPException(status_code=400, detail="Invalid year/month.")
+    first = datetime(year, month, 1, tzinfo=timezone.utc).date()
+    # last day of the month
+    if month == 12:
+        next_first = datetime(year + 1, 1, 1, tzinfo=timezone.utc).date()
+    else:
+        next_first = datetime(year, month + 1, 1, tzinfo=timezone.utc).date()
+    last = next_first - timedelta(days=1)
+    events = _events_in_range(first, last)
+    # Hijri label for the 1st of this month (just for header)
+    h_first = _gregorian_to_hijri(first.year, first.month, first.day)
+    h_last = _gregorian_to_hijri(last.year, last.month, last.day)
+    return {
+        "year": year,
+        "month": month,
+        "first_iso": first.isoformat(),
+        "last_iso": last.isoformat(),
+        "hijri_first": h_first,
+        "hijri_last": h_last,
+        "events": events,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Seeding
 # ──────────────────────────────────────────────────────────────────────────────
 async def seed_data():
-    # Bootstrap invite codes (only if NONE exist anywhere)
+    # Bootstrap 30 founder invite codes (only if NONE exist anywhere)
     if await db.invite_codes.count_documents({}) == 0:
+        import secrets
+        founder_codes = []
+        seen = set()
+        while len(founder_codes) < 30:
+            code = "".join(secrets.choice(_INVITE_ALPHABET) for _ in range(8))
+            if code in seen:
+                continue
+            seen.add(code)
+            founder_codes.append(code)
         await db.invite_codes.insert_many([
-            {"code": "NOOR-ALPHA", "issued_by": "system", "used_by": None,
-             "created_at": datetime.now(timezone.utc)},
-            {"code": "NOOR-BETA", "issued_by": "system", "used_by": None,
-             "created_at": datetime.now(timezone.utc)},
-            {"code": "NOOR-GAMMA", "issued_by": "system", "used_by": None,
-             "created_at": datetime.now(timezone.utc)},
-            {"code": "NOOR-DELTA", "issued_by": "system", "used_by": None,
-             "created_at": datetime.now(timezone.utc)},
-            {"code": "NOOR-EPSILON", "issued_by": "system", "used_by": None,
-             "created_at": datetime.now(timezone.utc)},
+            {"code": c, "issued_by": "system", "used_by": None, "founder": True,
+             "created_at": datetime.now(timezone.utc)}
+            for c in founder_codes
         ])
+        logger.info(f"Seeded {len(founder_codes)} founder invite codes")
 
     # Drop legacy demo communities once, then reseed canonical category circles
     if await db.communities.count_documents({"seed_version": {"$ne": 2}}) > 0:

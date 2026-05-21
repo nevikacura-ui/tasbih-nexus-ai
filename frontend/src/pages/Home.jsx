@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon, Bell } from "lucide-react";
+import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon, Bell, Star } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { RamadanCard } from "./Quran";
@@ -18,11 +18,17 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
+        // Quick retry once in case axios fires before guest auth lands
+        const fetchOnce = (url) => api.get(url);
+        const fetchRetry = async (url) => {
+          try { return await fetchOnce(url); }
+          catch { await new Promise(r => setTimeout(r, 600)); return fetchOnce(url); }
+        };
         const [n, r, t, c, nt] = await Promise.all([
-          api.get("/noor/today"),
-          api.get("/reflections"),
-          api.get("/tasbih/state"),
-          api.get("/communities"),
+          fetchRetry("/noor/today"),
+          fetchRetry("/reflections"),
+          fetchRetry("/tasbih/state"),
+          fetchRetry("/communities"),
           api.get("/notifications").catch(() => ({ data: { unread: 0 } })),
         ]);
         setNoor(n.data);
@@ -43,7 +49,7 @@ export default function HomePage() {
 
         <header className="px-5 pb-2 pt-9 animate-float-up" data-testid="home-greeting">
           <div className="flex items-center justify-between">
-            <img src="/logo-wordmark.png" alt="Tasbih.ai" className="h-7 w-auto select-none" />
+            <img src="/logo-wordmark.png" alt="Tasbih.ai" className="h-12 w-auto select-none" />
             <div className="flex items-center gap-2">
               <Link to="/notifications" data-testid="home-bell" className="glass shadow-soft relative flex h-9 w-9 items-center justify-center rounded-full tap-scale">
                 <Bell className="h-4 w-4 text-deep" />
@@ -60,7 +66,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <p className="mt-5 text-[10px] uppercase tracking-[0.22em] text-deep/45">As-salāmu ʿalaykum</p>
+          <p className="mt-5 text-[10px] uppercase tracking-[0.22em] text-deep/45">Yā ʿAlī Madad</p>
           <h1 className="mt-1 font-display text-2xl font-medium text-deep">
             Welcome back, <span className="text-gold-gradient">{firstName}</span>
           </h1>

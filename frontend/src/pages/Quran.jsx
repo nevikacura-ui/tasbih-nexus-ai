@@ -1,12 +1,188 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, BookOpen, Heart, Sparkles, Moon, Sun, Check } from "lucide-react";
+import { ArrowLeft, BookOpen, Heart, Sparkles, Moon, Sun, Check, ChevronRight, Globe2 } from "lucide-react";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
 
 export default function QuranPage() {
+  const [tab, setTab] = useState("read");
+
+  return (
+    <div className="relative mx-auto min-h-screen w-full max-w-[480px]" data-testid="quran-page">
+      <NoorBackdrop />
+      <header className="flex items-center gap-3 px-5 pt-9">
+        <Link to="/" className="glass shadow-soft flex h-10 w-10 items-center justify-center rounded-full tap-scale">
+          <ArrowLeft className="h-4 w-4 text-deep" />
+        </Link>
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-deep/45">Authentic</p>
+          <h1 className="font-display text-2xl text-deep">Qurʾan</h1>
+        </div>
+      </header>
+
+      <div className="mt-4 px-5">
+        <div className="glass inline-flex rounded-full p-1 shadow-soft">
+          <button data-testid="quran-tab-read" onClick={() => setTab("read")} className={`rounded-full px-4 py-1.5 text-xs font-medium tap-scale ${tab === "read" ? "bg-emerald-gradient text-ivory" : "text-deep/65"}`}>
+            Read
+          </button>
+          <button data-testid="quran-tab-reflections" onClick={() => setTab("reflections")} className={`rounded-full px-4 py-1.5 text-xs font-medium tap-scale ${tab === "reflections" ? "bg-emerald-gradient text-ivory" : "text-deep/65"}`}>
+            Reflections
+          </button>
+        </div>
+      </div>
+
+      {tab === "read" ? <ReadTab /> : <ReflectionsTab />}
+    </div>
+  );
+}
+
+function ReadTab() {
+  const [surahs, setSurahs] = useState([]);
+  const [openNum, setOpenNum] = useState(null);
+
+  useEffect(() => { (async () => {
+    try { const r = await api.get("/quran/surahs"); setSurahs(r.data.surahs || []); } catch (e) {}
+  })(); }, []);
+
+  if (openNum) return <SurahReader number={openNum} onBack={() => setOpenNum(null)} />;
+
+  return (
+    <>
+      <p className="px-5 pt-3 text-[10px] text-deep/45">
+        Uthmani Arabic with authentic translations (Sahih International, Asad, Jalandhry, Hamidullah…). Source: alquran.cloud.
+      </p>
+      <section className="mt-3 space-y-2 px-5 pb-10">
+        {surahs.length === 0 && <p className="px-2 text-xs text-deep/55">Loading the 114 surahs…</p>}
+        {surahs.map((s) => (
+          <button
+            key={s.number}
+            data-testid={`surah-${s.number}`}
+            onClick={() => setOpenNum(s.number)}
+            className="glass tap-scale flex w-full items-center gap-3 rounded-2xl p-3.5 text-left shadow-soft"
+          >
+            <div className="bg-gold-gradient flex h-9 w-9 items-center justify-center rounded-full font-display text-xs text-deep">
+              {s.number}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-deep">{s.english_name}</p>
+                <p className="font-display text-base text-deep" style={{ fontFamily: "Fraunces, serif" }} dir="rtl">{s.name}</p>
+              </div>
+              <p className="text-[10px] text-deep/55">{s.english_translation} · {s.revelation_type} · {s.ayah_count} ayāt</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-deep/45" />
+          </button>
+        ))}
+      </section>
+    </>
+  );
+}
+
+const LANG_FALLBACK = [
+  { id: "en", label: "English (Sahih International)" },
+  { id: "en2", label: "English (Muhammad Asad)" },
+  { id: "ur", label: "اردو (Urdu)" },
+  { id: "fr", label: "Français" },
+  { id: "tr", label: "Türkçe" },
+  { id: "id", label: "Bahasa Indonesia" },
+  { id: "ru", label: "Русский" },
+  { id: "es", label: "Español" },
+  { id: "de", label: "Deutsch" },
+];
+
+function SurahReader({ number, onBack }) {
+  const [surah, setSurah] = useState(null);
+  const [lang, setLang] = useState(() => {
+    try { return localStorage.getItem("tasbih_quran_lang") || "en"; } catch { return "en"; }
+  });
+  const [loading, setLoading] = useState(true);
+  const [langs, setLangs] = useState(LANG_FALLBACK);
+
+  useEffect(() => {
+    try { localStorage.setItem("tasbih_quran_lang", lang); } catch (_) {}
+    setLoading(true);
+    (async () => {
+      try {
+        const r = await api.get(`/quran/surah/${number}`, { params: { lang } });
+        setSurah(r.data);
+      } catch (e) { setSurah(null); }
+      finally { setLoading(false); }
+    })();
+  }, [number, lang]);
+
+  useEffect(() => { (async () => {
+    try { const r = await api.get("/quran/languages"); if (r.data.languages?.length) setLangs(r.data.languages); } catch (_) {}
+  })(); }, []);
+
+  return (
+    <div className="px-5 pb-12 pt-3">
+      <button onClick={onBack} data-testid="surah-back" className="glass inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] text-deep shadow-soft">
+        <ArrowLeft className="h-3 w-3" /> All surahs
+      </button>
+
+      {loading && <p className="mt-6 text-center text-xs text-deep/55">Loading surah…</p>}
+
+      {surah && (
+        <>
+          <header className="mt-4 text-center">
+            <p className="text-[10px] uppercase tracking-[0.22em] text-deep/45">Surah {surah.number} · {surah.revelation_type}</p>
+            <h2 className="mt-1 font-display text-2xl text-deep" dir="rtl" style={{ fontFamily: "Fraunces, serif" }}>{surah.name}</h2>
+            <p className="text-sm text-deep/70">{surah.english_name} — {surah.english_translation}</p>
+          </header>
+
+          <div className="mt-4 flex items-center gap-2">
+            <div className="glass flex flex-1 items-center gap-2 rounded-full px-3 py-2 shadow-soft">
+              <Globe2 className="h-3.5 w-3.5 text-deep/55" />
+              <select
+                data-testid="surah-lang"
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                className="flex-1 bg-transparent text-xs text-deep outline-none"
+              >
+                {langs.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+              </select>
+            </div>
+            <Link to="/noor" data-testid="surah-noor" className="bg-emerald-gradient text-ivory rounded-full px-3 py-2 text-[11px] shadow-soft">
+              Reflect with Noor
+            </Link>
+          </div>
+
+          {surah.translator && (
+            <p className="mt-2 px-2 text-center text-[10px] text-deep/45">Translation: {surah.translator}</p>
+          )}
+
+          <section className="mt-5 space-y-3">
+            {surah.number !== 1 && surah.number !== 9 && surah.ayahs?.length > 0 && (
+              <p className="text-center text-base text-deep/85" dir="rtl" style={{ fontFamily: "Fraunces, serif" }}>
+                بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+              </p>
+            )}
+            {surah.ayahs.map((a) => (
+              <article key={a.number} data-testid={`ayah-${surah.number}-${a.number}`} className="glass rounded-2xl p-4 shadow-soft">
+                <div className="flex items-center justify-between">
+                  <span className="bg-gold-gradient text-deep flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold">{a.number}</span>
+                  {a.sajda && <span className="rounded-full bg-sand/60 px-2 py-0.5 text-[9px] uppercase tracking-wider text-deep/65">Sajda</span>}
+                </div>
+                <p dir="rtl" className="mt-3 text-right text-xl leading-loose text-deep" style={{ fontFamily: "Fraunces, serif" }}>
+                  {a.ar}
+                </p>
+                {a.tr && <p className="mt-3 text-sm leading-relaxed text-deep/80">{a.tr}</p>}
+              </article>
+            ))}
+          </section>
+
+          <p className="mt-6 px-3 text-center text-[10px] leading-relaxed text-deep/45">
+            Translations are scholarly works by named translators and reflect their interpretation. Tasbih.ai is not a religious authority — please consult a learned guide for rulings.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReflectionsTab() {
   const [items, setItems] = useState([]);
-  const [open, setOpen] = useState(null); // selected reflection id
+  const [open, setOpen] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -17,23 +193,11 @@ export default function QuranPage() {
   const selected = items.find((i) => i.id === open);
 
   return (
-    <div className="relative mx-auto min-h-screen w-full max-w-[480px]" data-testid="quran-page">
-      <NoorBackdrop />
-      <header className="flex items-center gap-3 px-5 pt-9">
-        <Link to="/" className="glass shadow-soft flex h-10 w-10 items-center justify-center rounded-full tap-scale">
-          <ArrowLeft className="h-4 w-4 text-deep" />
-        </Link>
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-deep/45">Reflect</p>
-          <h1 className="font-display text-2xl text-deep">Qurʾan Reflections</h1>
-        </div>
-      </header>
-
+    <>
       <p className="px-5 pt-3 text-[10px] text-deep/45">
         Reflective summaries — not rulings or tafsir. Read with your own heart.
       </p>
-
-      <section className="mt-5 space-y-3 px-5 pb-10">
+      <section className="mt-3 space-y-3 px-5 pb-10">
         {items.map((q) => (
           <article
             key={q.id}
@@ -80,7 +244,7 @@ export default function QuranPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

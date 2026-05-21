@@ -1,47 +1,26 @@
 # Tasbih.ai — Test Credentials
 
-> The default auth flow is **silent guest auto-login** (no credentials needed).
-> Google OAuth is reachable at `/login` but requires a real Google account in the browser.
+## Invite-only gate is ON
+Two codes from two **different** inviters are required (founder codes are exempt — they bypass the same-issuer check). After verify → user enters name/email/WhatsApp → MSG91 sends a 6-digit OTP → 90-day session.
 
-## Manual test session (admin/seeded user)
-You can create an authenticated test session via `mongosh`:
+## 30 Founder Invitation Codes (8-char alphanumeric, no 0/O/1/I)
+All have `issued_by:"system"` and `founder:true` in MongoDB. Pair them as you like:
 
-```bash
-mongosh tasbih_db --quiet --eval '
-var userId = "test-user-amira";
-var token  = "tt_amira_session";
-db.users.updateOne(
-  {user_id:userId},
-  {$set:{user_id:userId,email:"amira@tasbih.ai",name:"Amira Test",picture:null,status:"member",city:"Toronto",invite_codes_used:["NOOR-ALPHA","NOOR-BETA"],referrals_received:2,invites_available:3,created_at:new Date()}},
-  {upsert:true}
-);
-db.user_sessions.updateOne(
-  {session_token:token},
-  {$set:{user_id:userId,session_token:token,expires_at:new Date(Date.now()+7*24*3600*1000),created_at:new Date()}},
-  {upsert:true}
-);
-print("Session token: "+token);
-'
+```
+01. RR43CLBG    02. 3TLB2RK4    03. B8DZHT2P    04. QMPHQ59Y    05. CBU8LQG6
+06. UFLHJW4J    07. EK48P89X    08. S4YNQFPK    09. X8PK3D9N    10. DDJT3RNY
+11. 6ULEDDAT    12. WJ4BM7YH    13. FF26CT3U    14. 39UQR5SQ    15. 53Q7H6WC
+16. RC8S3HSH    17. FB726CEW    18. TEBJGZ2A    19. ZGC325D2    20. UFGL76K6
+21. KMLBR6H9    22. UB6ZPB68    23. K82UUQWV    24. M86P5US6    25. AF5WQ2RY
+26. REE75BCT    27. 9A8Y2C57    28. R2EZ9W6Y    29. 649PJKUW    30. 7HDEAU36
 ```
 
-Then test:
-```bash
-BASE="https://be2e8ac9-4354-4086-8ac0-8b3db85a8926.preview.emergentagent.com"
-curl -H "Authorization: Bearer tt_amira_session" $BASE/api/auth/me
-```
+Owner uses pair 1: **RR43CLBG + 3TLB2RK4**
 
-In a browser, set a cookie named `session_token` with value `tt_amira_session` (`path=/`, `secure`, `samesite=None`).
+## MSG91 OTP
+- `MSG91_AUTH_KEY` is set in backend/.env
+- `MSG91_OTP_TEMPLATE_ID` is **NOT YET SET** — owner must paste it after creating the OTP template in the MSG91 dashboard with `##OTP##` placeholder.
+- Without the template ID, `/api/auth/otp/send` returns `500 OTP service not configured (MSG91_OTP_TEMPLATE_ID missing).`
 
-## Bootstrap invitation codes
-Seeded automatically on first startup if the `invite_codes` collection is empty:
-- `NOOR-ALPHA`
-- `NOOR-BETA`
-- `NOOR-GAMMA`
-- `NOOR-DELTA`
-- `NOOR-EPSILON`
-
-These can be used in the invite-code form once `INVITE_GATE_ENABLED=true`.
-
-## Notes
-- Google OAuth: no app-managed password is stored. Any Google account can sign in once OAuth is enabled.
-- Guest sessions persist for 7 days via httpOnly cookie.
+## Guest path
+`POST /api/auth/guest` still exists as a backend route but the Login UI no longer exposes it (invite gate is on). Can be invoked directly for backend testing only.

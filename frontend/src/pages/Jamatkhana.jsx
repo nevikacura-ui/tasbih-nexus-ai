@@ -9,7 +9,7 @@ export default function JamatkhanaPage() {
   const [country, setCountry] = useState("");
   const [cities, setCities] = useState([]);
   const [city, setCity] = useState("");
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(null);
   const [q, setQ] = useState("");
   const [locating, setLocating] = useState(false);
   const [nearby, setNearby] = useState(null);
@@ -32,16 +32,21 @@ export default function JamatkhanaPage() {
   }, [country]);
 
   useEffect(() => {
+    let alive = true;
     (async () => {
       try {
         const params = {};
         if (country) params.country = country;
         if (city) params.city = city;
         if (q) params.q = q;
-        const r = await api.get("/jamatkhanas", { params });
-        setItems(r.data.jamatkhanas || []);
-      } catch (e) {}
+        // Retry once if axios fires before guest auth lands
+        let r;
+        try { r = await api.get("/jamatkhanas", { params }); }
+        catch { await new Promise(res => setTimeout(res, 600)); r = await api.get("/jamatkhanas", { params }); }
+        if (alive) setItems(r.data.jamatkhanas || []);
+      } catch (e) { /* keep previous list */ }
     })();
+    return () => { alive = false; };
   }, [country, city, q]);
 
   const findNearMe = () => {
@@ -61,7 +66,7 @@ export default function JamatkhanaPage() {
       },
       (err) => {
         setLocating(false);
-        setError(err.code === 1 ? "Location permission was denied. Pick your country & city below." : "Couldn't read your location.");
+        setError(err.code === 1 ? "Location permission was denied. You can still browse by country or search below." : "Couldn't read your location. Try search below.");
       },
       { timeout: 10000 }
     );
@@ -91,7 +96,7 @@ export default function JamatkhanaPage() {
         >
           <Compass className="h-4 w-4" /> {locating ? "Finding you…" : "Use my current location"}
         </button>
-        {error && <p data-testid="locate-error" className="mt-2 text-[11px] text-red-700">{error}</p>}
+        {error && <p data-testid="locate-error" className="mt-2 text-[11px] text-deep/60">{error}</p>}
       </section>
 
       {nearby && (
@@ -138,10 +143,21 @@ export default function JamatkhanaPage() {
       </section>
 
       <section className="mt-5 space-y-2.5 px-5 pb-10">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-deep/45">
-          {items.length} jamatkhana{items.length === 1 ? "" : "s"}
-        </p>
-        {items.map((j) => <JKCard key={j.jk_id} j={j} mapsLink={mapsLink} />)}
+        {items === null ? (
+          <p className="text-center text-[11px] text-deep/55">Loading jamatkhanas…</p>
+        ) : (
+          <>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-deep/45">
+              {items.length} jamatkhana{items.length === 1 ? "" : "s"}
+            </p>
+            {items.length === 0 && (
+              <div className="glass rounded-2xl p-5 text-center text-xs text-deep/55 shadow-soft">
+                No jamatkhanas match these filters yet. Try clearing the search.
+              </div>
+            )}
+            {items.map((j) => <JKCard key={j.jk_id} j={j} mapsLink={mapsLink} />)}
+          </>
+        )}
       </section>
     </div>
   );

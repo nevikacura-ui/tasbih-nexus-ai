@@ -187,7 +187,27 @@ The experience should feel:
 - ✅ **Cookie + localStorage token dual fallback** — guest endpoint returns `session_token` in JSON body, frontend stores it, axios interceptor attaches it as `Authorization: Bearer …` on every request. Works even when mobile browsers block cookies.
 - ✅ Axios timeout: 15s (so requests never hang silently)
 - ✅ Faster splash (1.1s show → 1.7s gone)
-- ✅ Auth gate flag `INVITE_GATE_ENABLED` still **off** for free testing
+- ✅ Auth gate flag `INVITE_GATE_ENABLED` is **ON** as of Feb 2026 — two codes from two **different** inviters required (founder codes exempt). 90-day sessions.
+
+### Greeting & branding (Feb 2026)
+- ✅ Greeting switched to **"Yā ʿAlī Madad"** (Ismaili) across Login + Home headers — previously "As-salāmu ʿalaykum".
+- ✅ Login page logo enlarged (128px) and centered; the previously empty top of the screen now reads as a calm cinematic hero.
+
+### Invitation system (Feb 2026)
+- ✅ **30 founder codes** (8-char alphanumeric, no 0/O/1/I) seeded with `founder: true` flag — bootstrap pool for the first 15 user pairs.
+- ✅ **Unlimited per-user generation** — any member can mint as many codes as they wish; `invites_available` no longer enforced.
+- ✅ **Two-different-issuer rule** — `/api/invite/verify` rejects 2 codes from the same `issued_by` user (community-vouching integrity). Founder codes bypass this rule.
+
+### MSG91 WhatsApp OTP registration (Feb 2026)
+- ✅ Backend: `POST /api/auth/otp/send` (sends 6-digit OTP via MSG91 SendOTP) and `POST /api/auth/otp/verify` (verifies + creates user with 90-day session).
+- ✅ Env vars: `MSG91_AUTH_KEY` (set), `MSG91_OTP_TEMPLATE_ID` (**pending — user must paste from MSG91 dashboard → OTP → Templates with `##OTP##` placeholder**).
+- ✅ Login flow: 2 codes → name/email/WhatsApp → 6-digit OTP → 90-day session. No phone pre-fill. Country picker covers 14 markets.
+
+### Noor Moment (unique chat feature, Feb 2026)
+- ✅ Anyone in a community chat can tap the gold **Sparkles** button to invite Noor AI to drop a single 1-2 sentence calm reflection into the live conversation.
+- ✅ Rate-limited to **1 per 60 seconds per community** to keep Noor's presence rare and meaningful.
+- ✅ Special cinematic rendering — full-width emerald gradient card with gold glow halo, labelled `Noor Moment · invited by <name>`.
+- ✅ Broadcasts via existing WebSocket so all open clients see it instantly.
 
 ### Phase 4 / engagement (Feb 2026)
 - ✅ **Jamatkhana directory expanded to 146 entries** across 25+ countries (Canada, US, UK, Portugal, France, UAE, Kenya, Tanzania, India, Pakistan, Tajikistan, Singapore, Australia, Madagascar, Mozambique, Syria, Afghanistan, etc.). Duplicate seed block removed.

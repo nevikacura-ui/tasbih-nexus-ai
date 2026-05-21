@@ -179,6 +179,24 @@ function ChatView({ id, joined, setJoined, user }) {
     }
   };
 
+  const [noorBusy, setNoorBusy] = useState(false);
+  const [noorMsg, setNoorMsg] = useState("");
+  const invokeNoor = async () => {
+    if (noorBusy) return;
+    if (!joined) { try { await api.post(`/communities/${id}/join`); setJoined(true); } catch (e) {} }
+    setNoorBusy(true); setNoorMsg("");
+    try {
+      const r = await api.post(`/communities/${id}/noor-moment`);
+      // If WS is connected, the broadcast will arrive — otherwise inject locally
+      if (wsRef.current?.readyState !== 1) {
+        setMessages((m) => [...m, r.data]);
+      }
+    } catch (e) {
+      setNoorMsg(e?.response?.data?.detail || "Noor couldn't join right now.");
+      setTimeout(() => setNoorMsg(""), 4000);
+    } finally { setNoorBusy(false); }
+  };
+
   const visibleTyping = typingNames.filter((x) => x.user_id !== user?.user_id);
 
   return (
@@ -208,7 +226,18 @@ function ChatView({ id, joined, setJoined, user }) {
       </section>
 
       <div className="fixed bottom-0 left-1/2 w-full max-w-[480px] -translate-x-1/2 bg-gradient-to-t from-ivory via-ivory/95 to-transparent px-5 pb-6 pt-3">
+        {noorMsg && <p data-testid="noor-moment-msg" className="mb-2 px-2 text-center text-[10px] text-deep/60">{noorMsg}</p>}
         <div className="glass shadow-elegant flex items-end gap-2 rounded-3xl p-2">
+          <button
+            data-testid="noor-moment-btn"
+            onClick={invokeNoor}
+            disabled={noorBusy}
+            className="bg-gold-gradient text-deep shadow-soft flex h-10 w-10 shrink-0 items-center justify-center rounded-full tap-scale disabled:opacity-50"
+            aria-label="Invite Noor"
+            title="Invite Noor to share a calm reflection (once per minute)"
+          >
+            <Sparkles className={`h-4 w-4 ${noorBusy ? "animate-pulse" : ""}`} />
+          </button>
           <textarea
             data-testid="chat-input"
             value={text}
@@ -235,12 +264,34 @@ function ChatView({ id, joined, setJoined, user }) {
 
 function MessageBubble({ m, user }) {
   const mine = m.user_id === user?.user_id;
+  const isNoor = m.kind === "noor_moment" || m.user_id === "noor";
   const [reported, setReported] = useState(false);
   const report = async () => {
     const reason = window.prompt("Briefly, what's wrong? (e.g., spam, harassment, off-topic)") || "";
     if (!reason.trim()) return;
     try { await api.post("/reports", { target_type: "message", target_id: m.message_id, reason }); setReported(true); } catch (e) {}
   };
+
+  if (isNoor) {
+    return (
+      <div className="flex justify-center" data-testid={`noor-moment-${m.message_id}`}>
+        <div className="relative w-full max-w-[92%] overflow-hidden rounded-3xl bg-emerald-gradient p-4 text-ivory shadow-elegant">
+          <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-gold/30 blur-3xl" />
+          <div className="absolute -bottom-12 -left-12 h-32 w-32 rounded-full bg-gold/20 blur-3xl" />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-gold">
+              <Sparkles className="h-3 w-3" /> Noor Moment{m.invoked_by_name ? ` · invited by ${m.invoked_by_name}` : ""}
+            </div>
+            <p className="mt-2 font-display text-sm leading-relaxed text-ivory/95">{m.text}</p>
+            <p className="mt-2 text-[10px] text-ivory/55">
+              {m.created_at ? new Date(m.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : ""} · a calm pause for the circle
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`group flex ${mine ? "justify-end" : "justify-start"}`} data-testid={`chat-msg-${m.message_id}`}>
       {!mine && (
