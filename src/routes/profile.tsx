@@ -3,7 +3,7 @@ import { MobileShell } from "@/components/MobileShell";
 import { NoorBackdrop } from "@/components/NoorBackdrop";
 import {
   Settings, Award, BookOpen, HandHeart, Users, Sparkles, Bell, ChevronRight,
-  LogIn, LogOut, ShieldCheck, Flag, Crown,
+  LogIn, LogOut, ShieldCheck, Flag, Crown, Clock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
