@@ -1095,17 +1095,34 @@ async def resolve_report(report_id: str, action: str = Query(default="dismiss"),
     r = await db.reports.find_one({"report_id": report_id}, {"_id": 0})
     if not r:
         raise HTTPException(status_code=404, detail="Report not found")
+    target_author_id = None
     if action == "remove":
-        # Soft-remove the target
         if r["target_type"] == "post":
+            t = await db.posts.find_one({"post_id": r["target_id"]}, {"_id": 0})
+            target_author_id = (t or {}).get("user_id")
             await db.posts.update_one({"post_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
         elif r["target_type"] == "comment":
+            t = await db.comments.find_one({"comment_id": r["target_id"]}, {"_id": 0})
+            target_author_id = (t or {}).get("user_id")
             await db.comments.update_one({"comment_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
         elif r["target_type"] == "message":
+            t = await db.chat_messages.find_one({"message_id": r["target_id"]}, {"_id": 0})
+            target_author_id = (t or {}).get("user_id")
             await db.chat_messages.update_one({"message_id": r["target_id"]}, {"$set": {"removed": True, "text": "[removed by moderator]"}})
     await db.reports.update_one(
         {"report_id": report_id},
         {"$set": {"status": "resolved", "action": action, "resolved_by": user.user_id, "resolved_at": datetime.now(timezone.utc)}},
+    )
+    if action == "remove" and target_author_id:
+        await _notify(
+            target_author_id, "mod_action",
+            "A moderator removed one of your posts",
+            "Please review our community guidelines — be kind, no fatwas, no debates.",
+        )
+    await _notify(
+        r["reporter_id"], "report_resolved",
+        "Your report was reviewed",
+        f"Action: {action}. Thank you for keeping the circle calm.",
     )
     return {"ok": True}
 
@@ -1250,6 +1267,19 @@ async def update_request(rid: str, action: str = Query(...), user: User = Depend
             {"user_id": user.user_id},
             {"$inc": {"open_slots": -1}},
         )
+        await _notify(
+            r["mentee_id"], "mentorship_accepted",
+            f"{user.name} accepted your mentorship request",
+            "A new chapter — reach out and say salaam.",
+            link="/mentors",
+        )
+    else:
+        await _notify(
+            r["mentee_id"], "mentorship_declined",
+            f"{user.name} couldn't take new mentees right now",
+            "Try another mentor whose path resonates.",
+            link="/mentors",
+        )
     return {"ok": True, "status": new_status}
 
 
@@ -1371,6 +1401,151 @@ async def khidmah_leaderboard(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Jamatkhana directory + nearest finder
+# ──────────────────────────────────────────────────────────────────────────────
+import math
+
+def _haversine_km(lat1, lng1, lat2, lng2):
+    R = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+@api.get("/jamatkhanas")
+async def list_jamatkhanas(country: Optional[str] = None, city: Optional[str] = None, q: Optional[str] = None):
+    query = {}
+    if country: query["country"] = country
+    if city: query["city"] = city
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"city": {"$regex": q, "$options": "i"}},
+            {"country": {"$regex": q, "$options": "i"}},
+        ]
+    items = await db.jamatkhanas.find(query, {"_id": 0}).sort([("country", 1), ("city", 1), ("name", 1)]).to_list(length=2000)
+    return {"jamatkhanas": items}
+
+
+@api.get("/jamatkhanas/countries")
+async def jamatkhana_countries():
+    items = await db.jamatkhanas.distinct("country")
+    return {"countries": sorted(items)}
+
+
+@api.get("/jamatkhanas/cities")
+async def jamatkhana_cities(country: str):
+    items = await db.jamatkhanas.distinct("city", {"country": country})
+    return {"cities": sorted(items)}
+
+
+@api.get("/jamatkhanas/nearby")
+async def jamatkhanas_nearby(lat: float, lng: float, limit: int = 5):
+    items = await db.jamatkhanas.find({}, {"_id": 0}).to_list(length=5000)
+    for it in items:
+        if it.get("lat") is not None and it.get("lng") is not None:
+            it["distance_km"] = round(_haversine_km(lat, lng, it["lat"], it["lng"]), 1)
+        else:
+            it["distance_km"] = None
+    items = [i for i in items if i["distance_km"] is not None]
+    items.sort(key=lambda x: x["distance_km"])
+    return {"nearby": items[:limit]}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# User-created communities + fixed categories
+# ──────────────────────────────────────────────────────────────────────────────
+COMMUNITY_CATEGORIES = ["spiritual", "ecdc", "empowerment", "social_work", "health", "education", "other"]
+
+
+class CommunityIn(BaseModel):
+    name: str
+    category: str
+    country: str = "Global"
+    city: str = "Global"
+    description: str = ""
+
+
+@api.get("/communities/categories")
+async def community_categories():
+    return {"categories": [
+        {"id": "spiritual", "label": "Spiritual Growth"},
+        {"id": "ecdc", "label": "Family & ECDC"},
+        {"id": "empowerment", "label": "Youth Empowerment"},
+        {"id": "social_work", "label": "Social Work & Volunteering"},
+        {"id": "health", "label": "Health & Wellbeing"},
+        {"id": "education", "label": "Education & Learning"},
+        {"id": "other", "label": "Other"},
+    ]}
+
+
+@api.post("/communities")
+async def create_community(body: CommunityIn, user: User = Depends(current_user)):
+    if body.category not in COMMUNITY_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Invalid category")
+    name = body.name.strip()
+    if len(name) < 3:
+        raise HTTPException(status_code=400, detail="Community name is too short.")
+    community_id = f"c_{uuid.uuid4().hex[:10]}"
+    doc = {
+        "community_id": community_id,
+        "name": name,
+        "category": body.category,
+        "kind": body.category,
+        "country": body.country.strip() or "Global",
+        "city": body.city.strip() or "Global",
+        "description": body.description.strip()[:600],
+        "members": 1,
+        "official": False,
+        "created_by": user.user_id,
+        "created_at": datetime.now(timezone.utc),
+        "seed_version": 2,
+    }
+    await db.communities.insert_one(dict(doc))
+    await db.memberships.update_one(
+        {"user_id": user.user_id, "community_id": community_id},
+        {"$set": {"user_id": user.user_id, "community_id": community_id,
+                  "joined_at": datetime.now(timezone.utc), "role": "creator"}},
+        upsert=True,
+    )
+    return doc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Notifications
+# ──────────────────────────────────────────────────────────────────────────────
+async def _notify(user_id: str, kind: str, title: str, body: str = "", link: Optional[str] = None, meta: Optional[dict] = None):
+    if not user_id:
+        return
+    await db.notifications.insert_one({
+        "notification_id": f"ntf_{uuid.uuid4().hex[:12]}",
+        "user_id": user_id,
+        "kind": kind,
+        "title": title,
+        "body": body,
+        "link": link,
+        "meta": meta or {},
+        "read": False,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+
+@api.get("/notifications")
+async def list_notifications(user: User = Depends(current_user)):
+    items = await db.notifications.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=80)
+    unread = sum(1 for n in items if not n.get("read"))
+    return {"notifications": items, "unread": unread}
+
+
+@api.post("/notifications/mark-read")
+async def mark_read(user: User = Depends(current_user)):
+    await db.notifications.update_many({"user_id": user.user_id, "read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Seeding
 # ──────────────────────────────────────────────────────────────────────────────
 async def seed_data():
@@ -1389,40 +1564,40 @@ async def seed_data():
              "created_at": datetime.now(timezone.utc)},
         ])
 
+    # Drop legacy demo communities once, then reseed canonical category circles
+    if await db.communities.count_documents({"seed_version": {"$ne": 2}}) > 0:
+        await db.communities.delete_many({"seed_version": {"$ne": 2}})
+
     if await db.communities.count_documents({}) == 0:
+        # Six FIXED canonical category circles — every member can join these.
+        canonical = [
+            ("c_spiritual", "Spiritual Growth", "spiritual",
+             "Reflections, Qurʾan, dhikr, journaling — the quiet centre of the platform."),
+            ("c_ecdc", "Family & ECDC", "ecdc",
+             "Early childhood development, parenting circles, family halqas."),
+            ("c_empowerment", "Youth Empowerment", "empowerment",
+             "Mentorship, skills, scholarships, career growth for young members."),
+            ("c_socialwork", "Social Work & Volunteering", "social_work",
+             "Volunteer drives, seva, food banks, blood drives, community service."),
+            ("c_health", "Health & Wellbeing", "health",
+             "Mental health peer circles, fitness, nutrition, caregiver support."),
+            ("c_education", "Education & Learning", "education",
+             "Tutoring, study groups, scholarship support, lifelong learners."),
+        ]
         await db.communities.insert_many([
-            {"community_id": "c_toronto_youth", "name": "Toronto Youth Circle", "city": "Toronto", "country": "Canada",
-             "members": 412, "description": "Sunday halqas, hiking, late-night chai conversations.",
-             "kind": "youth"},
-            {"community_id": "c_noor_global", "name": "Noor Reflection Group", "city": "Global", "country": "Global",
-             "members": 1248, "description": "Weekly reflection prompts and journaling threads.",
-             "kind": "reflection"},
-            {"community_id": "c_mumbai_vol", "name": "Mumbai Volunteers", "city": "Mumbai", "country": "India",
-             "members": 287, "description": "Iftar drives, blood donation camps, education support.",
-             "kind": "volunteers"},
-            {"community_id": "c_founders", "name": "Founders & Creators", "city": "Global", "country": "Global",
-             "members": 533, "description": "A quiet network of Ismaili builders and storytellers.",
-             "kind": "network"},
-            {"community_id": "c_seva", "name": "Seva Mentors", "city": "Karachi", "country": "Pakistan",
-             "members": 198, "description": "Mentorship inspired by the ethics of service and pluralism.",
-             "kind": "mentorship"},
-            {"community_id": "c_london_families", "name": "London Families", "city": "London", "country": "United Kingdom",
-             "members": 145, "description": "Family halqas, picnics, and parenting circles.",
-             "kind": "family"},
-            {"community_id": "c_dubai_youth", "name": "Dubai Youth Circle", "city": "Dubai", "country": "UAE",
-             "members": 256, "description": "Beach halqas, study groups, and quiet evening reflections.",
-             "kind": "youth"},
-            {"community_id": "c_paris_reflection", "name": "Cercle Paris", "city": "Paris", "country": "France",
-             "members": 89, "description": "Réflexions en français, soirées Noor mensuelles.",
-             "kind": "reflection"},
+            {
+                "community_id": cid, "name": name, "category": cat,
+                "city": "Global", "country": "Global",
+                "members": 0, "kind": cat, "official": True,
+                "description": desc, "seed_version": 2,
+                "created_at": datetime.now(timezone.utc),
+            }
+            for (cid, name, cat, desc) in canonical
         ])
     else:
-        # Backfill country field for older seeded docs
-        await db.communities.update_many({"country": {"$exists": False}, "city": "Toronto"}, {"$set": {"country": "Canada"}})
-        await db.communities.update_many({"country": {"$exists": False}, "city": "Mumbai"}, {"$set": {"country": "India"}})
-        await db.communities.update_many({"country": {"$exists": False}, "city": "Karachi"}, {"$set": {"country": "Pakistan"}})
-        await db.communities.update_many({"country": {"$exists": False}, "city": "London"}, {"$set": {"country": "United Kingdom"}})
-        await db.communities.update_many({"country": {"$exists": False}, "city": "Global"}, {"$set": {"country": "Global"}})
+        # Backfill country / category on legacy docs if any survived
+        await db.communities.update_many({"country": {"$exists": False}}, {"$set": {"country": "Global"}})
+        await db.communities.update_many({"category": {"$exists": False}}, {"$set": {"category": "other"}})
 
     if await db.events.count_documents({}) == 0:
         await db.events.insert_many([
@@ -1449,59 +1624,89 @@ async def seed_data():
         ])
 
     if await db.mentor_profiles.count_documents({}) == 0:
-        # Seed mentor users + profiles
-        sample_mentors = [
-            {"user_id": "m_sana", "name": "Dr. Sana", "email": "sana@tasbih.ai", "city": "Toronto",
-             "headline": "Pediatrician · open to first-generation pre-meds",
-             "bio": "Twenty years in pediatrics. I love supporting students who are first-generation in medicine. Happy to talk about MCAT, residency, and balancing faith with long hospital nights.",
-             "skills": ["medicine", "career", "youth"]},
-            {"user_id": "m_hamza", "name": "Hamza Karim", "email": "hamza@tasbih.ai", "city": "Dubai",
-             "headline": "SaaS founder · helping new builders ship",
-             "bio": "Founded two SaaS companies (one acquired). I mentor Muslim builders 1:1 — product, fundraising, hiring, and the quieter side of staying spiritually grounded while building.",
-             "skills": ["startup", "product", "fundraising"]},
-            {"user_id": "m_ayesha", "name": "Ayesha Devji", "email": "ayesha@tasbih.ai", "city": "London",
-             "headline": "Senior designer · Figma, accessibility, portfolios",
-             "bio": "Design lead at a fintech. I review portfolios, do mock interviews, and help newer designers find a craft they love. Particularly happy to mentor women entering tech.",
-             "skills": ["design", "ux", "career"]},
-            {"user_id": "m_yusuf", "name": "Yusuf Damji", "email": "yusuf@tasbih.ai", "city": "Karachi",
-             "headline": "Teacher · ECDC educators network",
-             "bio": "Twelve years teaching. I help newer educators find their voice, plan curricula, and bring spiritual grounding into the classroom in a respectful, non-authoritative way.",
-             "skills": ["education", "teaching", "family"]},
-        ]
-        for m in sample_mentors:
-            await db.users.update_one(
-                {"user_id": m["user_id"]},
-                {"$set": {
-                    "user_id": m["user_id"], "name": m["name"], "email": m["email"],
-                    "picture": None, "status": "member", "city": m["city"],
-                    "invite_codes_used": [], "referrals_received": 2, "invites_available": 3,
-                    "created_at": datetime.now(timezone.utc),
-                }},
-                upsert=True,
-            )
-            await db.mentor_profiles.insert_one({
-                "user_id": m["user_id"],
-                "headline": m["headline"],
-                "bio": m["bio"],
-                "skills": m["skills"],
-                "open_slots": 2,
-                "languages": ["en"],
-                "open": True,
-                "created_at": datetime.now(timezone.utc),
-                "updated_at": datetime.now(timezone.utc),
-            })
+        # No seeded mentors — let real users create their own profiles.
+        # An empty mentor list is intentional; the Mentors page shows a friendly
+        # "Be the first mentor" empty state with a "Become a mentor" CTA.
+        pass
 
     if await db.reflections.count_documents({}) == 0:
-        await db.reflections.insert_many([
-            {"reflection_id": "r1", "author": "Layla", "circle": "Noor Circle · London",
-             "text": "Sat with the dawn today. The silence felt like a quiet answer to a prayer I hadn't said out loud yet.",
-             "likes": 42, "created_at": datetime.now(timezone.utc) - timedelta(hours=2)},
-            {"reflection_id": "r2", "author": "Imran", "circle": "Students · Karachi",
-             "text": "Started writing one ayah a day in my journal. Small ritual, big shift in how I notice my hours.",
-             "likes": 28, "created_at": datetime.now(timezone.utc) - timedelta(hours=5)},
-            {"reflection_id": "r3", "author": "Sahar", "circle": "Seva Mentors · Dubai",
-             "text": "Tonight I helped a younger cousin with her homework. She thanked me — but I think the lighter heart was mine.",
-             "likes": 51, "created_at": datetime.now(timezone.utc) - timedelta(hours=9)},
+        # No demo reflections — the feed will populate from real community activity.
+        pass
+
+    # ── Jamatkhana directory ──
+    if await db.jamatkhanas.count_documents({}) == 0:
+        jks = [
+            # Canada
+            ("Ismaili Centre Toronto", "Toronto", "Canada", 49 / 49, 43.7286, -79.3373, "49 Wynford Drive, Toronto"),
+            ("Headquarters Jamatkhana Toronto", "Toronto", "Canada", None, 43.6532, -79.3832, "Downtown Toronto"),
+            ("Bayview Jamatkhana", "Toronto", "Canada", None, 43.7800, -79.3760, "Bayview Ave area, Toronto"),
+            ("Mississauga Jamatkhana", "Mississauga", "Canada", None, 43.5890, -79.6441, "Mississauga, ON"),
+            ("Calgary Jamatkhana", "Calgary", "Canada", None, 51.0447, -114.0719, "Calgary, AB"),
+            ("Edmonton Jamatkhana", "Edmonton", "Canada", None, 53.5461, -113.4938, "Edmonton, AB"),
+            ("Vancouver Jamatkhana (Burnaby)", "Burnaby", "Canada", None, 49.2488, -122.9805, "Burnaby, BC"),
+            ("Ottawa Jamatkhana", "Ottawa", "Canada", None, 45.4215, -75.6972, "Ottawa, ON"),
+            ("Montreal Jamatkhana", "Montreal", "Canada", None, 45.5017, -73.5673, "Montreal, QC"),
+            # United States
+            ("Ismaili Jamatkhana & Center, Plano", "Plano", "United States", None, 33.0198, -96.6989, "Plano, TX"),
+            ("Sugarland Jamatkhana", "Sugar Land", "United States", None, 29.5994, -95.6147, "Sugar Land, TX"),
+            ("Headquarters Jamatkhana Houston", "Houston", "United States", None, 29.7604, -95.3698, "Houston, TX"),
+            ("Atlanta Jamatkhana", "Atlanta", "United States", None, 33.7490, -84.3880, "Atlanta, GA"),
+            ("Manhattan Jamatkhana", "New York", "United States", None, 40.7831, -73.9712, "Upper West Side, NY"),
+            ("Iselin Jamatkhana", "Iselin", "United States", None, 40.5754, -74.3221, "Iselin, NJ"),
+            ("Boston Jamatkhana", "Burlington", "United States", None, 42.5048, -71.1956, "Burlington, MA"),
+            ("Los Angeles Jamatkhana", "Sunset", "United States", None, 34.0982, -118.3267, "Sunset, CA"),
+            ("Bay Area Jamatkhana", "Sunnyvale", "United States", None, 37.3688, -122.0363, "Sunnyvale, CA"),
+            ("Chicago Jamatkhana", "Glenview", "United States", None, 42.0697, -87.7878, "Glenview, IL"),
+            ("Orlando Jamatkhana", "Orlando", "United States", None, 28.5383, -81.3792, "Orlando, FL"),
+            # United Kingdom
+            ("Ismaili Centre London", "London", "United Kingdom", None, 51.4955, -0.1747, "1-7 Cromwell Gardens, London SW7"),
+            ("Aga Khan Centre", "London", "United Kingdom", None, 51.5410, -0.1276, "10 Handyside Street, King's Cross, London"),
+            ("Headquarters Jamatkhana London (South Kensington)", "London", "United Kingdom", None, 51.4955, -0.1747, "South Kensington, London"),
+            ("Hounslow Jamatkhana", "Hounslow", "United Kingdom", None, 51.4685, -0.3614, "Hounslow, London"),
+            ("Manchester Jamatkhana", "Manchester", "United Kingdom", None, 53.4808, -2.2426, "Manchester"),
+            # Portugal
+            ("Ismaili Centre Lisbon", "Lisbon", "Portugal", None, 38.7510, -9.1985, "Av. Lusíada, Lisboa"),
+            # France
+            ("Jamatkhana Paris", "Paris", "France", None, 48.8566, 2.3522, "Paris"),
+            # UAE
+            ("Ismaili Centre Dubai", "Dubai", "UAE", None, 25.2289, 55.3236, "Bur Dubai"),
+            ("Khalifa City Jamatkhana", "Abu Dhabi", "UAE", None, 24.4257, 54.5870, "Khalifa City, Abu Dhabi"),
+            # Kenya & Tanzania
+            ("Headquarters Jamatkhana Nairobi", "Nairobi", "Kenya", None, -1.2864, 36.8172, "Nairobi"),
+            ("Mombasa Jamatkhana", "Mombasa", "Kenya", None, -4.0435, 39.6682, "Mombasa"),
+            ("Dar es Salaam Jamatkhana", "Dar es Salaam", "Tanzania", None, -6.7924, 39.2083, "Dar es Salaam"),
+            # India
+            ("Hasanabad Jamatkhana", "Mumbai", "India", None, 18.9750, 72.8258, "Mazgaon, Mumbai"),
+            ("Darkhana Jamatkhana Mumbai", "Mumbai", "India", None, 18.9388, 72.8354, "Mumbai"),
+            ("Pune Jamatkhana", "Pune", "India", None, 18.5204, 73.8567, "Pune"),
+            ("Ahmedabad Jamatkhana", "Ahmedabad", "India", None, 23.0225, 72.5714, "Ahmedabad"),
+            ("Hyderabad Jamatkhana", "Hyderabad", "India", None, 17.3850, 78.4867, "Hyderabad"),
+            # Pakistan
+            ("Garden Jamatkhana", "Karachi", "Pakistan", None, 24.8693, 67.0231, "Garden, Karachi"),
+            ("Darkhana Jamatkhana Karachi", "Karachi", "Pakistan", None, 24.8607, 67.0011, "Karachi"),
+            ("Lahore Jamatkhana", "Lahore", "Pakistan", None, 31.5204, 74.3587, "Lahore"),
+            ("Islamabad Jamatkhana", "Islamabad", "Pakistan", None, 33.6844, 73.0479, "Islamabad"),
+            ("Hunza Aliabad Jamatkhana", "Hunza", "Pakistan", None, 36.3169, 74.6500, "Aliabad, Hunza"),
+            # Tajikistan / Afghanistan / Syria
+            ("Ismaili Centre Dushanbe", "Dushanbe", "Tajikistan", None, 38.5598, 68.7870, "Dushanbe"),
+            ("Khorog Jamatkhana", "Khorog", "Tajikistan", None, 37.4894, 71.5556, "Khorog, GBAO"),
+            # Bangladesh / Singapore / Australia
+            ("Singapore Jamatkhana", "Singapore", "Singapore", None, 1.3521, 103.8198, "Singapore"),
+            ("Sydney Jamatkhana", "Sydney", "Australia", None, -33.8688, 151.2093, "Sydney"),
+            ("Melbourne Jamatkhana", "Melbourne", "Australia", None, -37.8136, 144.9631, "Melbourne"),
+        ]
+        await db.jamatkhanas.insert_many([
+            {
+                "jk_id": f"jk_{i}",
+                "name": name,
+                "city": city,
+                "country": country,
+                "lat": lat,
+                "lng": lng,
+                "address": addr,
+                "type": "jamatkhana",
+            }
+            for i, (name, city, country, _unused, lat, lng, addr) in enumerate(jks, start=1)
         ])
 
 

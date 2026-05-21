@@ -20,6 +20,8 @@ import RemindersPage from "./pages/Reminders";
 import ModerationPage from "./pages/Moderation";
 import MentorsPage from "./pages/Mentors";
 import KhidmahPage from "./pages/Khidmah";
+import JamatkhanaPage from "./pages/Jamatkhana";
+import NotificationsPage from "./pages/Notifications";
 
 function Protected({ children }) {
   // Non-blocking: always render. Auth happens in background and pages handle
@@ -46,6 +48,8 @@ function Router() {
       <Route path="/moderation" element={<Protected><ModerationPage /></Protected>} />
       <Route path="/mentors" element={<Protected><MentorsPage /></Protected>} />
       <Route path="/khidmah" element={<Protected><KhidmahPage /></Protected>} />
+      <Route path="/jamatkhana" element={<Protected><JamatkhanaPage /></Protected>} />
+      <Route path="/notifications" element={<Protected><NotificationsPage /></Protected>} />
       <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
       <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
       <Route path="/events" element={<Protected><EventsPage /></Protected>} />

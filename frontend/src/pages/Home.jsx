@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon } from "lucide-react";
+import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon, Bell } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { RamadanCard } from "./Quran";
@@ -13,20 +13,23 @@ export default function HomePage() {
   const [reflections, setReflections] = useState([]);
   const [tasbih, setTasbih] = useState({ today: 0, streak: 0, total: 0 });
   const [comms, setComms] = useState([]);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     (async () => {
       try {
-        const [n, r, t, c] = await Promise.all([
+        const [n, r, t, c, nt] = await Promise.all([
           api.get("/noor/today"),
           api.get("/reflections"),
           api.get("/tasbih/state"),
           api.get("/communities"),
+          api.get("/notifications").catch(() => ({ data: { unread: 0 } })),
         ]);
         setNoor(n.data);
         setReflections(r.data.reflections || []);
         setTasbih(t.data);
         setComms((c.data.communities || []).slice(0, 4));
+        setUnread(nt.data.unread || 0);
       } catch (e) {}
     })();
   }, []);
@@ -41,11 +44,21 @@ export default function HomePage() {
         <header className="px-5 pb-2 pt-9 animate-float-up" data-testid="home-greeting">
           <div className="flex items-center justify-between">
             <img src="/logo-wordmark.png" alt="Tasbih.ai" className="h-7 w-auto select-none" />
-            <Link to="/profile" className="glass shadow-soft flex h-9 w-9 items-center justify-center rounded-full tap-scale" aria-label="Profile">
-              <span className="bg-gold-gradient h-6 w-6 rounded-full text-deep flex items-center justify-center font-display text-xs">
-                {firstName?.[0] || "G"}
-              </span>
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link to="/notifications" data-testid="home-bell" className="glass shadow-soft relative flex h-9 w-9 items-center justify-center rounded-full tap-scale">
+                <Bell className="h-4 w-4 text-deep" />
+                {unread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold-gradient px-1 text-[9px] font-semibold text-deep" data-testid="home-bell-badge">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
+              </Link>
+              <Link to="/profile" className="glass shadow-soft flex h-9 w-9 items-center justify-center rounded-full tap-scale" aria-label="Profile">
+                <span className="bg-gold-gradient h-6 w-6 rounded-full text-deep flex items-center justify-center font-display text-xs">
+                  {firstName?.[0] || "G"}
+                </span>
+              </Link>
+            </div>
           </div>
           <p className="mt-5 text-[10px] uppercase tracking-[0.22em] text-deep/45">As-salāmu ʿalaykum</p>
           <h1 className="mt-1 font-display text-2xl font-medium text-deep">

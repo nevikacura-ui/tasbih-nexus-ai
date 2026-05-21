@@ -1,11 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Users, MapPin, Plus, MessageCircle } from "lucide-react";
+import { Search, Users, MapPin, Plus, MessageCircle, X } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
 
-const FILTERS = ["All", "Youth", "Volunteers", "Mentorship", "Reflection", "Family"];
+const FILTERS = ["All", "Spiritual", "ECDC", "Empowerment", "Social Work", "Health", "Education"];
+
+const FILTER_TO_CATEGORY = {
+  "All": null,
+  "Spiritual": "spiritual",
+  "ECDC": "ecdc",
+  "Empowerment": "empowerment",
+  "Social Work": "social_work",
+  "Health": "health",
+  "Education": "education",
+};
 
 export default function CommunitiesPage() {
   const [comms, setComms] = useState([]);
@@ -13,6 +23,7 @@ export default function CommunitiesPage() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("All");
   const [country, setCountry] = useState("All");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -30,13 +41,8 @@ export default function CommunitiesPage() {
 
   const filtered = comms.filter((c) => {
     const matchesQ = !q || (c.name + c.city + (c.country || "") + c.description).toLowerCase().includes(q.toLowerCase());
-    const matchesF =
-      filter === "All" ||
-      (filter === "Youth" && c.kind === "youth") ||
-      (filter === "Volunteers" && c.kind === "volunteers") ||
-      (filter === "Mentorship" && c.kind === "mentorship") ||
-      (filter === "Reflection" && c.kind === "reflection") ||
-      (filter === "Family" && c.kind === "family");
+    const targetCat = FILTER_TO_CATEGORY[filter];
+    const matchesF = !targetCat || c.category === targetCat || c.kind === targetCat;
     const matchesCountry = country === "All" || (c.country || "Global") === country;
     return matchesQ && matchesF && matchesCountry;
   });
@@ -53,7 +59,7 @@ export default function CommunitiesPage() {
               <p className="text-[10px] uppercase tracking-[0.22em] text-deep/45">Belong</p>
               <h1 className="mt-1 font-display text-2xl text-deep">Communities</h1>
             </div>
-            <button className="bg-emerald-gradient text-ivory shadow-glow flex h-10 w-10 items-center justify-center rounded-full tap-scale" aria-label="Create">
+            <button onClick={() => setCreateOpen(true)} data-testid="create-circle-btn" className="bg-emerald-gradient text-ivory shadow-glow flex h-10 w-10 items-center justify-center rounded-full tap-scale" aria-label="Create circle">
               <Plus className="h-4 w-4" />
             </button>
           </div>
@@ -146,25 +152,81 @@ export default function CommunitiesPage() {
 
         <section className="mt-7 px-5">
           <h2 className="mb-3 font-display text-base text-deep">Mentorship</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { name: "Dr. Sana", role: "Pediatrician", tag: "Open to mentees" },
-              { name: "Hamza", role: "Founder, SaaS", tag: "2 spots" },
-              { name: "Ayesha", role: "Designer", tag: "Open" },
-              { name: "Yusuf", role: "Educator", tag: "Open" },
-            ].map((m) => (
-              <div key={m.name} className="glass rounded-2xl p-4 shadow-soft">
-                <div className="bg-gold-gradient text-deep mb-3 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold">
-                  {m.name[0]}
-                </div>
-                <p className="text-sm font-medium text-deep">{m.name}</p>
-                <p className="text-[11px] text-deep/55">{m.role}</p>
-                <p className="mt-2 text-[11px] text-deep/75">{m.tag}</p>
-              </div>
-            ))}
+          <div className="glass rounded-2xl p-4 shadow-soft text-center">
+            <p className="text-sm text-deep">Browse Tasbih.ai mentors — share what you know, find someone walking the path you've walked.</p>
+            <Link to="/mentors" data-testid="goto-mentors" className="bg-emerald-gradient text-ivory shadow-elegant mt-3 inline-block rounded-full px-5 py-2 text-xs font-semibold tap-scale">
+              Open mentorship
+            </Link>
           </div>
         </section>
+
+        {createOpen && <CreateCircleModal onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); load(); }} />}
       </div>
     </MobileShell>
+  );
+}
+
+function CreateCircleModal({ onClose, onCreated }) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("other");
+  const [country, setCountry] = useState("");
+  const [city, setCity] = useState("");
+  const [description, setDescription] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try { const r = await api.get("/communities/categories"); setCategories(r.data.categories || []); } catch (e) {}
+    })();
+  }, []);
+
+  const save = async () => {
+    if (!name.trim() || name.trim().length < 3) { setErr("Give your circle a calm, clear name (3+ chars)."); return; }
+    setBusy(true); setErr(null);
+    try {
+      await api.post("/communities", {
+        name: name.trim(),
+        category,
+        country: country.trim() || "Global",
+        city: city.trim() || "Global",
+        description: description.trim(),
+      });
+      onCreated();
+    } catch (e) { setErr(e?.response?.data?.detail || "Could not create."); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-deep/30 backdrop-blur-sm" data-testid="create-circle-modal" onClick={onClose}>
+      <div className="glass w-full max-w-[480px] rounded-t-[28px] p-5 shadow-elegant" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-deep/15" />
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.22em] text-deep/45">Create</p>
+            <h2 className="font-display text-xl text-deep">A new circle</h2>
+          </div>
+          <button onClick={onClose} className="text-deep/55" aria-label="Close"><X className="h-4 w-4" /></button>
+        </div>
+        <p className="mt-1 text-xs text-deep/60">Circles are warm rooms for ongoing conversation. Pick a calm name.</p>
+
+        <div className="mt-4 space-y-3">
+          <input data-testid="cc-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Circle name (e.g. Calgary Health & Wellbeing)" className="w-full rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
+          <select data-testid="cc-category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold">
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <input data-testid="cc-country" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Country" className="rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
+            <input data-testid="cc-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
+          </div>
+          <textarea data-testid="cc-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="What is this circle for? Who is welcome?" className="w-full resize-none rounded-2xl border border-deep/10 bg-white/60 px-4 py-3 text-sm outline-none focus:border-gold" />
+        </div>
+        {err && <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>}
+        <button data-testid="cc-save" onClick={save} disabled={busy} className="bg-emerald-gradient text-ivory shadow-elegant mt-4 w-full rounded-full py-3 text-sm font-medium tap-scale disabled:opacity-50">
+          {busy ? "Creating…" : "Create circle"}
+        </button>
+      </div>
+    </div>
   );
 }

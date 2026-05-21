@@ -26,7 +26,44 @@ The experience should feel:
 - **Volunteer / mentor** — engages with seva drives and mentorship
 - **Family / parent** — uses family circles, parenting resources (future)
 
-## Implemented in this MVP (Phase 1 — May 2026)
+## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
+
+### Demo cleanup
+- ✅ All fake mentor names removed (Dr. Sana, Hamza Karim, Ayesha Devji, Yusuf Damji deleted)
+- ✅ Hand-written "Layla / Imran / Sahar" demo reflections removed
+- ✅ Legacy demo communities (Toronto Youth Circle, Mumbai Volunteers, etc.) replaced with **six canonical category circles**:
+  Spiritual Growth · Family & ECDC · Youth Empowerment · Social Work & Volunteering · Health & Wellbeing · Education & Learning
+
+### Jamatkhana directory (new)
+- ✅ **47 jamatkhanas seeded** across **13 countries** (Canada, US, UK, France, Portugal, UAE, Kenya, Tanzania, India, Pakistan, Tajikistan, Singapore, Australia) with lat/lng
+- ✅ "Use my current location" — browser Geolocation API + Haversine distance → returns sorted nearest 5
+- ✅ Browse by country → city dropdowns with cascading filters
+- ✅ Full-text search across name/city/country
+- ✅ Direct "Open in Google Maps" link per jamatkhana
+- ✅ Accessible from Profile → "Find your Jamatkhana"
+
+### User-created communities + fixed categories (new)
+- ✅ Floating + button on Circles page opens **Create circle modal** (name, category, country, city, description)
+- ✅ 7 fixed categories: Spiritual · ECDC · Empowerment · Social Work · Health · Education · Other
+- ✅ Creator auto-joined with `role: creator`
+- ✅ Filter chips reflect categories (no more `youth/volunteers/etc` vanity tags)
+
+### Become a mentor (new)
+- ✅ Third tab on Mentors page: "Become a mentor" / "My profile"
+- ✅ Form: Headline (140 chars) · Bio (1200 chars) · Skills (comma-sep, max 12) · Open spots · Languages
+- ✅ Profile is `open: true` whenever open_slots > 0
+- ✅ Retire button to take profile offline
+- ✅ Live edit + save with toast feedback
+- ✅ Empty-state on browse view encourages "Be the first mentor"
+
+### Notifications (new)
+- ✅ Backend notifications collection + auto-creation on:
+  - Mentorship request received (notifies mentor)
+  - Mentorship accepted / declined (notifies mentee)
+  - Moderator content removal (notifies original author + reporter)
+- ✅ `/notifications` page with read/unread state
+- ✅ Bell icon in Home header with gold unread badge
+- ✅ Auto-marks read on view
 
 ### Auth & onboarding
 - ✅ Silent **guest auto-login** (no login wall) — users land directly in the app
