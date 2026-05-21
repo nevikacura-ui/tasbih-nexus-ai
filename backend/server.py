@@ -1922,7 +1922,7 @@ async def noor_digest(user: User = Depends(current_user)):
             "journal_entries": len(journal),
             "khidmah_points": khidmah_pts,
         },
-        "generated_at": datetime.now(timezone.utc),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.noor_digests.insert_one(dict(doc))
     return doc
