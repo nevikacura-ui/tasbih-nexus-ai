@@ -368,7 +368,8 @@ export default function DuaPage() {
     })();
   }, []);
 
-  // Build slides: pairs of duas, plus dedicated interlude slides where requested
+  // Build slides: pairs of duas, plus dedicated interlude slides where requested.
+  // A dua with `interlude_after` becomes a solo card and the interlude follows it.
   const slides = useMemo(() => {
     const byRakaat = new Map();
     items.forEach((d) => {
@@ -384,14 +385,16 @@ export default function DuaPage() {
         let i = 0;
         while (i < list.length) {
           const a = list[i];
-          const b = list[i + 1] || null;
-          out.push({ kind: "pair", rakaat: r, items: [a, b], anchorId: a.id });
           if (a.interlude_after) {
+            // Solo card, then interlude
+            out.push({ kind: "pair", rakaat: r, items: [a, null], anchorId: a.id });
             out.push({ kind: "interlude", rakaat: r, data: a.interlude_after, anchorId: `${a.id}_after` });
-          } else if (b && b.interlude_after) {
-            out.push({ kind: "interlude", rakaat: r, data: b.interlude_after, anchorId: `${b.id}_after` });
+            i += 1;
+          } else {
+            const b = list[i + 1] || null;
+            out.push({ kind: "pair", rakaat: r, items: [a, b], anchorId: a.id });
+            i += 2;
           }
-          i += 2;
         }
       });
     return out;

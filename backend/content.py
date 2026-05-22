@@ -1059,6 +1059,13 @@ DUA: list[dict] = [
         "transliteration": "Waghfir lanā",
         "english": "And forgive us (our sins).",
         "arabic": "وَاغْفِرْ لَنَا",
+        "mid_insert": {
+            "kind": "verse",
+            "title": "My Prostration",
+            "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
+            "english": "O Allah, to You is my prostration and obedience.",
+            "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        },
     },
     {
         "id": "r6_15_qadeer",
@@ -1067,13 +1074,6 @@ DUA: list[dict] = [
         "transliteration": "Innaka 'alā kulli shay'in qadeer",
         "english": "Verily, You are the Omnipotent.",
         "arabic": "إِنَّكَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
-        "mid_insert": {
-            "kind": "verse",
-            "title": "My Prostration",
-            "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
-            "english": "O Allah, to You is my prostration and obedience.",
-            "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
-        },
     },
     {
         "id": "r6_16_walhamdu",
