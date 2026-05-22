@@ -28,7 +28,28 @@ The experience should feel:
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
 
-## Latest sprint — Holy Du'a redesign (May 21–22, 2026)
+## Latest sprint — Du'a P0 fix + P1 batch (May 22, 2026)
+
+### P0 — Audio "stops right at the start" (root cause + fix)
+- **Root cause**: ElevenLabs TTS returns **MONO** MP3 frames (channel mode `11`), but the silence-padding frames injected between segments were encoded as **Joint Stereo** (channel mode `01`). Mobile browser decoders (mobile Safari & Chrome) bail when channel mode flips mid-stream → the player froze the moment it hit the first silence gap after verse 1.
+- **Fix** (`/app/backend/server.py`): silence-frame header byte 3 changed from `0x44` (Joint Stereo) → `0xC4` (Mono); cache schema bumped `5 → 6` so both voices rebuilt cleanly.
+- **Verified**: 12,976 frames in the male MP3 are now 100% mono, zero stereo mixed in. Player advances past verse 1 in the live preview.
+
+### P1 — Audio resume "Pick up where you left off"
+- Backend: `POST /api/dua/progress` (throttled save every 5 s) + `GET /api/dua/progress` (returns saved position + voice).
+- Frontend: gold-glass pill appears bottom-left when a saved position > 20 s exists. Tap → switches to saved voice, seeks to position, begins playback.
+
+### P1 — Verse bookmarks + share-card export
+- Backend: `GET /api/dua/bookmarks`, `POST /api/dua/bookmarks`, `DELETE /api/dua/bookmarks/{dua_id}`.
+- Frontend: Bookmark + Share buttons on every Dua half-card. Share opens a cinematic preview card (Arabic + transliteration + English on the same rakaat gradient with mosque silhouette) with **Copy text** and native **Share** actions.
+
+### P1 — Noor AI contextual Du'a suggestion
+- Backend: `NOOR_SYSTEM_PROMPT` extended with a 15-verse curated theme catalogue. Claude appends a `[DUA:<id>]` marker when a verse fits the user's mood. Server strips the marker and attaches a `suggested_dua` object to the response.
+- Frontend: After the stream finishes, a gold-bordered "SIT WITH THIS VERSE" mini-card slides in under Noor's reply, linking to `/dua`.
+
+### Home credit
+- Added a calm "Curated with care · Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India" footer to the Home page, matching the existing Profile & Login styling.
+
 - **Dua content (`backend/content.py`)**: replaced 20 situational duas with the **full Holy Du'a from user's 2025-dua-translation.pdf** — 110 verse-cards across 6 rakaats. Each item: `{id, rakaat, order, situation: "rakaat-N", title, transliteration, english, arabic}`. Imam reference globally updated **Karim → Rahim** (Aga Khan IV → Aga Khan V transition); also renamed ginan `eji_sahebjī_tum_kareem` → `eji_sahebjī_tum_rahim`.
 - **Dua page (`frontend/src/pages/Dua.jsx`)**: Instagram-style scroll-snap feed. **Two duas paired per card** (paired within rakaat, odd-tail solo). Cinematic per-rakaat gradients (emerald/teal/plum/ruby/olive/blue) + mosque silhouette SVG + light rays + grain overlay. Transliteration is the primary large display; English directly below; **Arabic revealed on tap**. Floating gold filter button → 6-rakaat jump sheet.
 - **In-slide inserts (`mid_insert` field)**: Slide 44 — "Yā 'Aly yā Muhammad..." gold-bordered glass card between duas. Slide 56 — "My Prostration" verse insert.

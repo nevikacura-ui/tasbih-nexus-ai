@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check, Play, Pause, Repeat } from "lucide-react";
+import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check, Play, Pause, Repeat, Bookmark, Share2 } from "lucide-react";
 import { api } from "../lib/api";
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL;
@@ -50,7 +50,7 @@ const GrainTexture = () => (
   />
 );
 
-function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading, progress }) {
+function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading, progress, isBookmarked, onToggleBookmark, onShare }) {
   const showProgress = isPlaying || (progress && progress > 0 && progress < 1);
   return (
     <div
@@ -125,6 +125,40 @@ function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading, prog
           <Languages className="h-3 w-3" />
           Tap for Arabic
         </button>
+
+        {/* Bookmark + Share — auto-pushed to the right */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleBookmark && onToggleBookmark(item); }}
+            data-testid={`dua-bookmark-${item.id}`}
+            aria-pressed={!!isBookmarked}
+            aria-label={isBookmarked ? "Remove bookmark" : "Bookmark this verse"}
+            className="flex h-8 w-8 items-center justify-center rounded-full transition-all tap-scale"
+            style={{
+              background: isBookmarked ? `${accent}33` : "rgba(255,255,255,0.06)",
+              border: `1px solid ${isBookmarked ? accent : "rgba(255,255,255,0.14)"}`,
+              color: isBookmarked ? accent : "rgba(247,243,236,0.7)",
+              boxShadow: isBookmarked ? `0 0 14px ${accent}55` : "none",
+            }}
+          >
+            <Bookmark className="h-3.5 w-3.5" fill={isBookmarked ? accent : "none"} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onShare && onShare(item); }}
+            data-testid={`dua-share-${item.id}`}
+            aria-label="Share this verse"
+            className="flex h-8 w-8 items-center justify-center rounded-full transition-all tap-scale"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "rgba(247,243,236,0.7)",
+            }}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Soft progress bar — appears under the card while the verse plays */}
@@ -175,16 +209,23 @@ function MidInsert({ insert, accent }) {
   );
 }
 
-function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete, voice, autoPlayActive }) {
+function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete, voice, autoPlayActive, masterDrivenName }) {
   const theme = RAKAAT_THEMES[rakaat] || RAKAAT_THEMES[6];
   const [recited, setRecited] = useState(() => new Set());
-  const [playingIdx, setPlayingIdx] = useState(null); // index of name being recited
+  const [playingIdx, setPlayingIdx] = useState(null); // index of name being recited (local mode only)
   const audioRef = useRef(null);
   const cancelRef = useRef(false);
   if (!audioRef.current && typeof window !== "undefined") {
     audioRef.current = new Audio();
     audioRef.current.preload = "auto";
   }
+
+  // When master MP3 is driving playback, derive the active index from masterDrivenName
+  const masterIdx = useMemo(() => {
+    if (!masterDrivenName || !data.names) return -1;
+    return data.names.findIndex((n) => n === masterDrivenName);
+  }, [masterDrivenName, data.names]);
+  const activeIdx = autoPlayActive ? masterIdx : playingIdx;
 
   const toggle = (i) => {
     setRecited((prev) => {
@@ -252,24 +293,35 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
     };
   }, []);
 
-  // React to parent's master Play All — start/stop reciteAll automatically.
-  // Use a ref-guard so a single autoPlayActive=true edge only triggers one reciteAll.
-  const autoStartedRef = useRef(false);
+  // React to parent's master Play All — when master is active, DO NOT spawn a
+  // second local <audio> stream (the master MP3 already contains all 50 names —
+  // running both would overlay two voices reciting "Mawlana Aly" simultaneously,
+  // which the user hears as a ghost/background voice). Only stop any in-flight
+  // local recitation if it was running.
   useEffect(() => {
     if (autoPlayActive) {
-      if (!autoStartedRef.current && playingIdx === null) {
-        autoStartedRef.current = true;
-        reciteAll();
-      }
-    } else {
-      // Master paused → stop current recitation if running
-      autoStartedRef.current = false;
       if (playingIdx !== null) stopRecite();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPlayActive]);
 
+  // When master is driving the audio, mirror the active-name index into the
+  // `recited` set so users see verses tick off visually as they're heard.
+  useEffect(() => {
+    if (!autoPlayActive || masterIdx < 0) return;
+    setRecited((prev) => {
+      if (prev.has(masterIdx)) return prev;
+      const next = new Set(prev);
+      next.add(masterIdx);
+      return next;
+    });
+    // Auto-scroll the active name into view
+    const node = document.querySelector(`[data-testid="dua-imam-tick-${masterIdx + 1}"]`);
+    if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [autoPlayActive, masterIdx]);
+
   const isReciting = playingIdx !== null;
+  const masterInCharge = !!autoPlayActive;
 
   return (
     <section
@@ -314,9 +366,11 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
             <button
               type="button"
               onClick={reciteAll}
+              disabled={masterInCharge}
               data-testid="dua-interlude-recite-all"
               aria-label={isReciting ? "Stop recitation" : "Recite all 50 names"}
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] transition-all tap-scale"
+              title={masterInCharge ? "Master Play All is reciting — pause it to use this" : ""}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] transition-all tap-scale disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: isReciting ? theme.accent : `${theme.accent}22`,
                 color: isReciting ? "#0F3D36" : theme.accent,
@@ -355,7 +409,7 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
           {(data.names || []).map((n, i) => {
             const isLast = i === total_names - 1;
             const ticked = recited.has(i);
-            const isActive = playingIdx === i;
+            const isActive = activeIdx === i;
             return (
               <li key={`${n}-${i}`}>
                 <button
@@ -432,7 +486,7 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
   );
 }
 
-function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadingId, audioProgress }) {
+function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadingId, audioProgress, bookmarkIds, onToggleBookmark, onShare }) {
   const theme = RAKAAT_THEMES[pair[0].rakaat] || RAKAAT_THEMES[1];
   const [a, b] = pair;
   const insert = a.mid_insert && a.mid_insert.kind === "verse" ? a.mid_insert : null;
@@ -470,6 +524,9 @@ function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadi
             isPlaying={playingId === a.id}
             isLoading={loadingId === a.id}
             progress={playingId === a.id ? audioProgress : 0}
+            isBookmarked={bookmarkIds && bookmarkIds.has(a.id)}
+            onToggleBookmark={onToggleBookmark}
+            onShare={onShare}
           />
 
           {/* Mid insert (between the two duas) */}
@@ -500,6 +557,9 @@ function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadi
               isPlaying={playingId === b.id}
               isLoading={loadingId === b.id}
               progress={playingId === b.id ? audioProgress : 0}
+              isBookmarked={bookmarkIds && bookmarkIds.has(b.id)}
+              onToggleBookmark={onToggleBookmark}
+              onShare={onShare}
             />
           )}
         </div>
@@ -523,6 +583,133 @@ function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadi
 }
 
 export default function DuaPage() {
+  return <DuaPageInner />;
+}
+
+function ShareCardModal({ item, theme, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const [sharing, setSharing] = useState(false);
+
+  const text = `${item.transliteration}\n— ${item.english}\n\nFrom the Holy Du'a · Tasbih.ai`;
+  const url = (typeof window !== "undefined" ? window.location.origin : "") + "/dua";
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) { /* ignore */ }
+  };
+
+  const onNativeShare = async () => {
+    if (typeof navigator === "undefined" || !navigator.share) {
+      onCopy();
+      return;
+    }
+    setSharing(true);
+    try {
+      await navigator.share({ title: `${item.title} · Holy Du'a`, text, url });
+    } catch (e) { /* user cancelled */ }
+    finally { setSharing(false); }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-black/75 backdrop-blur-md px-5"
+      onClick={onClose}
+      data-testid="dua-share-modal"
+    >
+      <div
+        className="w-full max-w-[420px] rounded-3xl border p-1 shadow-2xl"
+        style={{ borderColor: `${theme.accent}55` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Beautiful share preview card */}
+        <div
+          className="relative overflow-hidden rounded-[22px] p-7 text-center text-ivory"
+          style={{
+            background: `linear-gradient(180deg, ${theme.from} 0%, ${theme.via} 60%, ${theme.to} 100%)`,
+          }}
+          data-testid="dua-share-preview"
+        >
+          <LightRays accent={theme.accent} />
+          <MosqueSilhouette color={`${theme.accent}33`} />
+          <GrainTexture />
+
+          <div className="relative z-10">
+            <p
+              className="text-[10px] uppercase tracking-[0.32em]"
+              style={{ color: theme.accent }}
+            >
+              {item.title}
+            </p>
+            {item.arabic && (
+              <p
+                dir="rtl"
+                className="mt-5 leading-[1.85]"
+                style={{
+                  fontFamily: "'Amiri', 'Scheherazade New', 'Noto Naskh Arabic', serif",
+                  fontSize: "clamp(22px, 5.6vw, 30px)",
+                  color: "#F4D88A",
+                }}
+              >
+                {item.arabic}
+              </p>
+            )}
+            <div className="mt-4 mx-auto h-px w-10" style={{ background: `linear-gradient(90deg, transparent, ${theme.accent}, transparent)` }} />
+            <h3
+              className="mt-4 font-display italic leading-[1.25]"
+              style={{ fontSize: "clamp(18px, 5vw, 24px)" }}
+            >
+              {item.transliteration}
+            </h3>
+            <p className="mt-3 text-[13px] leading-relaxed text-ivory/80">
+              {item.english}
+            </p>
+            <p className="mt-6 text-[9px] uppercase tracking-[0.32em] text-ivory/45">
+              Holy Du'a · Tasbih.ai
+            </p>
+          </div>
+        </div>
+
+        {/* Action row */}
+        <div className="mt-2 grid grid-cols-2 gap-2 px-3 pb-3 pt-2">
+          <button
+            type="button"
+            onClick={onCopy}
+            data-testid="dua-share-copy"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-ivory/15 bg-black/55 px-4 py-3 text-[12px] font-medium text-ivory tap-scale"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Languages className="h-4 w-4" />}
+            {copied ? "Copied" : "Copy text"}
+          </button>
+          <button
+            type="button"
+            onClick={onNativeShare}
+            disabled={sharing}
+            data-testid="dua-share-native"
+            className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-3 text-[12px] font-semibold text-deep tap-scale disabled:opacity-60"
+            style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          data-testid="dua-share-close"
+          className="mb-2 mx-auto block w-fit px-4 py-1.5 text-[11px] uppercase tracking-[0.22em] text-ivory/55 tap-scale"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DuaPageInner() {
   const [items, setItems] = useState([]);
   const [credit, setCredit] = useState("");
   const [loading, setLoading] = useState(true);
@@ -583,6 +770,59 @@ export default function DuaPage() {
   // We declare it before any callbacks reference it; it is hydrated by an effect below
   // after `slides` is computed.
   const slidesRef = useRef([]);
+
+  // ── Resume "Pick up where you left off" ────────────────────────
+  const [resumeInfo, setResumeInfo] = useState(null); // { position_ms, voice, duration_ms }
+  const [resumeDismissed, setResumeDismissed] = useState(false);
+  const pendingSeekMsRef = useRef(null); // set when user taps the Resume pill; applied on onplaying
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get("/dua/progress");
+        const pos = Number(r.data?.position_ms || 0);
+        if (pos > 20000) { // only show resume if >20s in
+          setResumeInfo({ position_ms: pos, voice: r.data.voice || "male", duration_ms: r.data.duration_ms || 0 });
+        }
+      } catch (e) { /* not logged-in or no row yet */ }
+    })();
+  }, []);
+
+  // ── Bookmarks ──────────────────────────────────────────────────
+  const [bookmarkIds, setBookmarkIds] = useState(() => new Set());
+  const [shareCard, setShareCard] = useState(null); // dua object being shared
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get("/dua/bookmarks");
+        setBookmarkIds(new Set(r.data.ids || []));
+      } catch (e) { /* guest or not logged in */ }
+    })();
+  }, []);
+
+  const toggleBookmark = useCallback(async (dua) => {
+    const isOn = bookmarkIds.has(dua.id);
+    // Optimistic UI
+    setBookmarkIds((prev) => {
+      const next = new Set(prev);
+      if (isOn) next.delete(dua.id);
+      else next.add(dua.id);
+      return next;
+    });
+    try {
+      if (isOn) await api.delete(`/dua/bookmarks/${dua.id}`);
+      else await api.post("/dua/bookmarks", { dua_id: dua.id });
+    } catch (e) {
+      // Roll back on failure
+      setBookmarkIds((prev) => {
+        const next = new Set(prev);
+        if (isOn) next.add(dua.id);
+        else next.delete(dua.id);
+        return next;
+      });
+    }
+  }, [bookmarkIds]);
 
   // ── Audio playback ─────────────────────────────────────────────
   const [fullTimeline, setFullTimeline] = useState(null); // [{id, kind, slide_idx, start_ms, end_ms, ...}]
@@ -729,10 +969,30 @@ export default function DuaPage() {
         setLoadingId(null);
         releaseWakeLock();
       };
-      el.onplaying = () => { setLoadingId(null); };
+      el.onplaying = () => {
+        setLoadingId(null);
+        // Apply pending resume seek if any (set when the user taps the Resume pill)
+        if (pendingSeekMsRef.current !== null && el.duration && isFinite(el.duration)) {
+          try { el.currentTime = Math.max(0, Math.min(el.duration - 1, pendingSeekMsRef.current / 1000)); }
+          catch (e) { /* ignore */ }
+          pendingSeekMsRef.current = null;
+          setResumeInfo(null);
+        }
+      };
+      let lastSaveAt = 0;
       el.ontimeupdate = () => {
         if (!el.duration || !isFinite(el.duration)) return;
         setAudioProgress(Math.min(1, el.currentTime / el.duration));
+        // Throttle resume-save to once every 5s
+        const nowMs = Date.now();
+        if (nowMs - lastSaveAt > 5000 && el.currentTime > 1) {
+          lastSaveAt = nowMs;
+          api.post("/dua/progress", {
+            voice,
+            position_ms: Math.round(el.currentTime * 1000),
+            duration_ms: Math.round(el.duration * 1000),
+          }).catch(() => { /* silent — guest may 401 */ });
+        }
         const cur_ms = el.currentTime * 1000;
         const segs = tl;
         let lo = 0, hi = segs.length - 1, hit = -1;
@@ -1051,6 +1311,9 @@ export default function DuaPage() {
                     playingId={playingId}
                     loadingId={loadingId}
                     audioProgress={audioProgress}
+                    bookmarkIds={bookmarkIds}
+                    onToggleBookmark={toggleBookmark}
+                    onShare={setShareCard}
                   />
                 ) : (
                   <ImamListInterlude
@@ -1061,6 +1324,11 @@ export default function DuaPage() {
                     autoAdvance={autoAdvance}
                     voice={voice}
                     autoPlayActive={isAutoPlaying && currentSlideIdx === idx}
+                    masterDrivenName={
+                      isAutoPlaying && currentSeg && currentSeg.kind === "name"
+                        ? currentSeg.id.replace(/^imam:/, "")
+                        : null
+                    }
                     onComplete={() => {
                       if (isAutoPlayingRef.current || autoAdvanceRef.current) {
                         setTimeout(scrollToNext, 900);
@@ -1131,6 +1399,55 @@ export default function DuaPage() {
         >
           <ListFilter className="h-5 w-5" />
         </button>
+      )}
+
+      {/* Resume "Pick up where you left off" pill — bottom-left, calm gold glass */}
+      {!loading && slides.length > 0 && resumeInfo && !resumeDismissed && !isAutoPlaying && (
+        <div
+          className="fixed bottom-7 left-5 z-40 flex items-center gap-2 max-w-[calc(100%-110px)]"
+          data-testid="dua-resume-pill"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              // Switch voice if saved voice differs, then begin playback at saved pos
+              if (resumeInfo.voice && resumeInfo.voice !== voice) {
+                setVoice(resumeInfo.voice);
+              }
+              pendingSeekMsRef.current = resumeInfo.position_ms;
+              setResumeDismissed(true);
+              // small delay so the voice swap settles in localStorage / state
+              setTimeout(() => { toggleAutoPlay(); }, 50);
+            }}
+            data-testid="dua-resume-play"
+            className="group flex items-center gap-2 rounded-full border bg-black/60 px-4 py-2.5 text-left text-[11px] text-ivory backdrop-blur-md shadow-2xl tap-scale"
+            style={{ borderColor: "rgba(232,195,106,0.55)", boxShadow: "0 8px 28px rgba(0,0,0,0.45), 0 0 18px rgba(232,195,106,0.25)" }}
+            aria-label={`Resume Du'a from ${Math.floor(resumeInfo.position_ms / 60000)} minutes`}
+          >
+            <span
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+              style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)", color: "#0F3D36" }}
+            >
+              <Play className="h-3.5 w-3.5 translate-x-[1px]" />
+            </span>
+            <span className="flex flex-col leading-tight">
+              <span className="text-[9px] uppercase tracking-[0.22em] text-[#E8C36A]">Pick up where you left off</span>
+              <span className="mt-0.5 text-[11px] text-ivory/85">
+                Resume from {Math.floor(resumeInfo.position_ms / 60000)}:{String(Math.floor((resumeInfo.position_ms % 60000) / 1000)).padStart(2, "0")}
+                {resumeInfo.voice === "female" ? " · F" : " · M"}
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setResumeDismissed(true)}
+            data-testid="dua-resume-dismiss"
+            aria-label="Dismiss resume"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-ivory/15 bg-black/45 text-ivory/65 backdrop-blur-md tap-scale"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
       {/* Filter sheet */}
@@ -1241,6 +1558,15 @@ export default function DuaPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Share card modal — preview + native share / clipboard */}
+      {shareCard && (
+        <ShareCardModal
+          item={shareCard}
+          theme={RAKAAT_THEMES[shareCard.rakaat] || RAKAAT_THEMES[1]}
+          onClose={() => setShareCard(null)}
+        />
       )}
 
       {/* ── Sit with Du'a — premium ambient mode ─────────────────── */}

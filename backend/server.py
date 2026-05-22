@@ -949,15 +949,37 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
         logger.exception("noor chat failed")
         raise HTTPException(status_code=502, detail=f"Noor is resting: {e}")
 
+    # Parse optional `[DUA:<id>]` suggestion token from the reply
+    suggested_dua = None
+    clean_reply = reply
+    import re as _re
+    m = _re.search(r"\[DUA:([a-zA-Z0-9_]+)\]", reply or "")
+    if m:
+        dua_id = m.group(1)
+        for d in DUA:
+            if d.get("id") == dua_id:
+                suggested_dua = {
+                    "id": d["id"],
+                    "title": d.get("title"),
+                    "transliteration": d.get("transliteration"),
+                    "english": d.get("english"),
+                    "arabic": d.get("arabic"),
+                    "rakaat": d.get("rakaat"),
+                }
+                break
+        # Strip the token from the visible reply regardless (don't surface raw markers)
+        clean_reply = _re.sub(r"\s*\[DUA:[a-zA-Z0-9_]+\]\s*", "", reply).strip()
+
     await db.noor_messages.insert_one({
         "session_id": session_id,
         "user_id": user.user_id,
         "role": "noor",
-        "text": reply,
+        "text": clean_reply,
+        "suggested_dua_id": (suggested_dua or {}).get("id"),
         "language": lang_key,
         "created_at": datetime.now(timezone.utc),
     })
-    return NoorChatResponse(session_id=session_id, reply=reply)
+    return NoorChatResponse(session_id=session_id, reply=clean_reply, suggested_dua=suggested_dua)
 
 
 @api.get("/noor/history/{session_id}")
@@ -2904,14 +2926,6 @@ async def list_dua(situation: Optional[str] = None, q: Optional[str] = None):
     return {"dua": items, "credit": "Curated by Naushad & Shabnam Patel · Andheri Jamatkhana · Mumbai · India"}
 
 
-@api.get("/dua/{dua_id}")
-async def get_dua(dua_id: str):
-    for d in DUA:
-        if d.get("id") == dua_id:
-            return d
-    raise HTTPException(status_code=404, detail="Dua not found")
-
-
 # ── Audio progress (Pick up where you left off) ──────────────────────────────
 class DuaProgressBody(BaseModel):
     voice: str = "male"
@@ -3000,6 +3014,14 @@ async def add_dua_bookmark(body: BookmarkBody, user: User = Depends(current_user
 async def delete_dua_bookmark(dua_id: str, user: User = Depends(current_user)):
     res = await db.dua_bookmarks.delete_one({"user_id": user.user_id, "dua_id": dua_id})
     return {"ok": True, "deleted": res.deleted_count}
+
+
+@api.get("/dua/{dua_id}")
+async def get_dua(dua_id: str):
+    for d in DUA:
+        if d.get("id") == dua_id:
+            return d
+    raise HTTPException(status_code=404, detail="Dua not found")
 
 
 # ── ElevenLabs · Authentic Arabic recitation for Dua + Tasbih ─────────

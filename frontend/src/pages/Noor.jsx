@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Send, Sparkles, Globe } from "lucide-react";
+import { ArrowLeft, Send, Sparkles, Globe, BookOpenText } from "lucide-react";
 import { NoorBackdrop } from "../components/NoorBackdrop";
 import { api } from "../lib/api";
 
@@ -41,11 +41,12 @@ export default function NoorPage() {
     try {
       const r = await api.post("/noor/chat", { message: text, session_id: sessionId });
       setSessionId(r.data.session_id);
+      const suggested = r.data.suggested_dua || null;
       // Stream the reply word-by-word for a calm typing effect
       const full = r.data.reply || "";
       const idx = await new Promise((resolve) => {
         setMessages((m) => {
-          const next = [...m, { role: "noor", text: "" }];
+          const next = [...m, { role: "noor", text: "", suggested_dua: null }];
           resolve(next.length - 1);
           return next;
         });
@@ -58,7 +59,15 @@ export default function NoorPage() {
         // eslint-disable-next-line no-loop-func
         setMessages((m) => {
           const copy = [...m];
-          if (copy[idx]) copy[idx] = { role: "noor", text: acc };
+          if (copy[idx]) copy[idx] = { role: "noor", text: acc, suggested_dua: null };
+          return copy;
+        });
+      }
+      // After streaming completes, attach the suggested Dua so it animates in below
+      if (suggested) {
+        setMessages((m) => {
+          const copy = [...m];
+          if (copy[idx]) copy[idx] = { ...copy[idx], suggested_dua: suggested };
           return copy;
         });
       }
@@ -120,19 +129,48 @@ export default function NoorPage() {
 
       <section className="flex-1 space-y-4 px-5 pb-44 pt-6" data-testid="noor-thread">
         {messages.map((m, i) => (
-          <div key={i} className={`animate-float-up flex ${m.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`msg-${m.role}-${i}`}>
-            {m.role === "noor" && (
-              <div className="bg-gold-gradient noor-ring mr-2 mt-1 h-7 w-7 shrink-0 rounded-full animate-noor-pulse" />
-            )}
-            <div
-              className={`shadow-soft max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                m.role === "user"
-                  ? "bg-emerald-gradient text-ivory rounded-br-md"
-                  : "glass text-deep rounded-bl-md"
-              }`}
-            >
-              {m.text}
+          <div key={i} className={`animate-float-up flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`} data-testid={`msg-${m.role}-${i}`}>
+            <div className={`flex w-full ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              {m.role === "noor" && (
+                <div className="bg-gold-gradient noor-ring mr-2 mt-1 h-7 w-7 shrink-0 rounded-full animate-noor-pulse" />
+              )}
+              <div
+                className={`shadow-soft max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  m.role === "user"
+                    ? "bg-emerald-gradient text-ivory rounded-br-md"
+                    : "glass text-deep rounded-bl-md"
+                }`}
+              >
+                {m.text}
+              </div>
             </div>
+            {m.role === "noor" && m.suggested_dua && (
+              <Link
+                to="/dua"
+                data-testid={`msg-noor-suggested-dua-${i}`}
+                className="animate-float-up mt-2 ml-9 block max-w-[78%] overflow-hidden rounded-2xl border border-gold/60 shadow-soft tap-scale"
+                style={{
+                  background: "linear-gradient(160deg, #0F3D36 0%, #1f5448 100%)",
+                }}
+              >
+                <div className="flex items-start gap-3 p-3.5">
+                  <div className="bg-gold-gradient flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-deep">
+                    <BookOpenText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[9px] uppercase tracking-[0.22em] text-gold/90">
+                      Sit with this verse
+                    </p>
+                    <p className="mt-1 font-display italic text-[14px] leading-snug text-ivory line-clamp-2">
+                      {m.suggested_dua.transliteration}
+                    </p>
+                    <p className="mt-1 text-[11px] leading-snug text-ivory/70 line-clamp-2">
+                      {m.suggested_dua.english}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            )}
           </div>
         ))}
 
