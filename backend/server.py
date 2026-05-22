@@ -35,6 +35,75 @@ DB_NAME = os.environ["DB_NAME"]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
+# ── LLM provider (OpenRouter) ──────────────────────────────────────────────
+# OpenRouter exposes an OpenAI-compatible Chat Completions API at
+# https://openrouter.ai/api/v1. Single key, many models. We prefer this over
+# the Emergent Universal Key for production billing predictability + cheaper
+# Claude Haiku tier. Falls back gracefully if not configured.
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+NOOR_MODEL = os.environ.get("NOOR_MODEL", "anthropic/claude-haiku-4.5")
+PUBLIC_APP_URL = "https://tasbih.ai"  # for OpenRouter's HTTP-Referer header
+
+_openrouter_client = None
+
+def _get_openrouter_client():
+    """Lazily create a single shared async OpenRouter client."""
+    global _openrouter_client
+    if _openrouter_client is None and OPENROUTER_API_KEY:
+        from openai import AsyncOpenAI
+        _openrouter_client = AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=OPENROUTER_API_KEY,
+            default_headers={
+                # OpenRouter uses these for usage analytics + free-model
+                # eligibility. Optional but recommended.
+                "HTTP-Referer": PUBLIC_APP_URL,
+                "X-Title": "Tasbih.ai",
+            },
+        )
+    return _openrouter_client
+
+
+async def noor_llm_reply(
+    *,
+    system_message: str,
+    user_message: str,
+    session_id: str | None = None,
+    history_messages: list | None = None,
+    model: str | None = None,
+    max_tokens: int = 800,
+) -> str:
+    """Single entry point for all Noor-AI generations.
+
+    - `history_messages` (optional): pre-loaded list of prior turns as
+      [{"role": "user"|"assistant", "content": "..."}] for multi-turn chat.
+      We rebuild this from MongoDB at the call site so the LLM stays stateless.
+    - Returns the reply text. Raises HTTPException(502) on provider error.
+    """
+    client = _get_openrouter_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="LLM not configured")
+
+    messages = [{"role": "system", "content": system_message}]
+    if history_messages:
+        messages.extend(history_messages)
+    messages.append({"role": "user", "content": user_message})
+
+    try:
+        resp = await client.chat.completions.create(
+            model=model or NOOR_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.7,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e:
+        # OpenRouter sometimes returns 429 (rate limit) or 402 (insufficient
+        # credits) — surface as a calm 502 so the frontend shows "Noor is
+        # resting" instead of a stack trace.
+        logger.exception("noor llm failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Noor is resting: {e}")
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -890,36 +959,33 @@ NOOR_SYSTEM_PROMPT = (
 )
 
 
-GUEST_NOOR_DAILY_LIMIT = 5
+NOOR_DAILY_LIMIT = 3  # per-user daily reply cap (guests + members)
 
 
 @api.post("/noor/chat", response_model=NoorChatResponse)
 async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
-    # Daily rate limit for guests (encourages sign-up without blocking the taste)
-    if getattr(user, "status", None) == "guest":
-        today_iso = datetime.now(timezone.utc).date().isoformat()
-        count = await db.noor_messages.count_documents({
-            "user_id": user.user_id,
-            "role": "user",
-            "day": today_iso,
-        })
-        if count >= GUEST_NOOR_DAILY_LIMIT:
-            raise HTTPException(
-                status_code=429,
-                detail=f"You've used your {GUEST_NOOR_DAILY_LIMIT} free Noor reflections today. Sign in to keep going gently.",
-            )
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="LLM key not configured")
+    # Daily rate limit — 3 Noor reflections per user per day.
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    count_today = await db.noor_messages.count_documents({
+        "user_id": user.user_id,
+        "role": "user",
+        "day": today_iso,
+    })
+    if count_today >= NOOR_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"You've used your {NOOR_DAILY_LIMIT} Noor reflections for today. Come back tomorrow with a calm heart.",
+        )
     session_id = body.session_id or f"noor_{user.user_id}_{uuid.uuid4().hex[:8]}"
 
-    # Persist user message (with `day` field for guest rate-limiting)
+    # Persist user message (with `day` field for rate-limiting)
     await db.noor_messages.insert_one({
         "session_id": session_id,
         "user_id": user.user_id,
         "role": "user",
         "text": body.message,
         "language": body.language or "en",
-        "day": datetime.now(timezone.utc).date().isoformat(),
+        "day": today_iso,
         "created_at": datetime.now(timezone.utc),
     })
 
@@ -937,17 +1003,26 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
     if lang_instruction:
         system = system + f"\n\nLanguage of the response: {lang_name}. {lang_instruction} Quranic verses may remain in Arabic followed by a soft translation in {lang_name}."
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    # Rebuild multi-turn history from MongoDB (last 12 turns max — keeps token
+    # usage low and context fresh; older context is summarized only implicitly).
+    prior = await db.noor_messages.find(
+        {"session_id": session_id, "_id": {"$ne": None}},
+        {"_id": 0, "role": 1, "text": 1, "created_at": 1},
+    ).sort("created_at", 1).to_list(length=24)
+    history = []
+    for m in prior:
+        role = "assistant" if m["role"] == "noor" else "user"
+        # Skip the message we just inserted (will be added by noor_llm_reply)
+        if role == "user" and m.get("text") == body.message:
+            continue
+        history.append({"role": role, "content": m.get("text", "")})
 
-    try:
-        reply = await chat.send_message(UserMessage(text=body.message))
-    except Exception as e:
-        logger.exception("noor chat failed")
-        raise HTTPException(status_code=502, detail=f"Noor is resting: {e}")
+    reply = await noor_llm_reply(
+        system_message=system,
+        user_message=body.message,
+        session_id=session_id,
+        history_messages=history[-12:],  # last 12 turns
+    )
 
     # Parse optional `[DUA:<id>]` suggestion token from the reply
     suggested_dua = None
@@ -1114,7 +1189,7 @@ async def noor_moment(community_id: str, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
-    if not EMERGENT_LLM_KEY:
+    if not (OPENROUTER_API_KEY or EMERGENT_LLM_KEY):
         raise HTTPException(status_code=500, detail="Noor is offline right now.")
     # Per-community rate-limit: 1 noor moment per 60 seconds
     last = await db.chat_messages.find_one(
@@ -1134,17 +1209,15 @@ async def noor_moment(community_id: str, user: User = Depends(require_member)):
     import random
     prompt = random.choice(NOOR_MOMENT_PROMPTS)
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"noor_moment_{community_id}",
+        reflection = await noor_llm_reply(
             system_message=NOOR_SYSTEM_PROMPT,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-        reflection = await chat.send_message(UserMessage(text=prompt))
-        reflection = (reflection or "").strip()
+            user_message=prompt,
+            session_id=f"noor_moment_{community_id}",
+            max_tokens=200,
+        )
         if len(reflection) > 360:
             reflection = reflection[:357].rstrip() + "…"
-    except Exception as e:
-        logger.warning(f"noor moment failed: {e}")
+    except HTTPException:
         reflection = "A gentle pause for all of us. Breathe — three slow breaths together."
     msg = {
         "message_id": f"msg_{uuid.uuid4().hex[:12]}",
@@ -2457,7 +2530,7 @@ async def noor_year_mosaic(user: User = Depends(current_user)):
 
 @api.get("/noor/digest")
 async def noor_digest(user: User = Depends(require_member)):
-    if not EMERGENT_LLM_KEY:
+    if not (OPENROUTER_API_KEY or EMERGENT_LLM_KEY):
         raise HTTPException(status_code=500, detail="LLM key not configured")
     start, end, key = _week_window()
     # Return cached digest if already generated this week
@@ -2495,14 +2568,13 @@ async def noor_digest(user: User = Depends(require_member)):
             f"Tone: gentle, warm, never preachy. Avoid platitudes. No fatwas. No religious rulings."
         )
         try:
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"digest_{user.user_id}_{key}",
+            digest_text = await noor_llm_reply(
                 system_message=NOOR_SYSTEM_PROMPT,
-            ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-            digest_text = await chat.send_message(UserMessage(text=prompt))
-        except Exception as e:
-            logger.exception("digest failed")
+                user_message=prompt,
+                session_id=f"digest_{user.user_id}_{key}",
+                max_tokens=400,
+            )
+        except HTTPException:
             digest_text = "This week, you showed up. That is its own quiet victory."
         themes = []
         if journal: themes.append("reflection")

@@ -8,6 +8,12 @@ MSG91 WhatsApp OTP path is **hidden** behind a frontend feature flag (`OTP_LOGIN
 in `/app/frontend/src/pages/Login.jsx`). Backend endpoints `/api/auth/otp/send` and
 `/api/auth/otp/verify` still exist for emergency rollback but are not surfaced in the UI.
 
+## Noor AI provider (as of May 23 2026)
+- **OpenRouter** with model `anthropic/claude-haiku-4.5`
+- Key in `/app/backend/.env`: `OPENROUTER_API_KEY=sk-or-v1-...`
+- Daily limit: **3 replies per user per day** (`NOOR_DAILY_LIMIT = 3` in server.py, applies to guests + members)
+- 429 detail message: "You've used your 3 Noor reflections for today. Come back tomorrow with a calm heart."
+
 ## 30 Founder Invitation Codes (8-char alphanumeric, no 0/O/1/I)
 All have `issued_by:"system"` and `founder:true` in MongoDB. Pair them as you like:
 
@@ -30,7 +36,7 @@ Owner pair (recommended for testing): **RR43CLBG + 3TLB2RK4**
 - 90-day session cookie (`session_token`, HttpOnly + Secure + SameSite=None)
 
 ## Guest path
-`POST /api/auth/guest` still exists. Guests can use Home, Noor AI, Dua, Jamatkhanas, and the
+`POST /api/auth/guest` still exists. Guests can use Home, Noor AI (3/day), Dua, Jamatkhanas, and the
 50-Imam Tasbih card. Tapping Circles/Profile triggers the `<LoginRequired>` wall.
 
 ## Manual session bypass for backend testing
