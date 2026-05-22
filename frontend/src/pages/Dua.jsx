@@ -883,6 +883,24 @@ export default function DuaPage() {
   const fullDurationMs = fullTimeline && fullTimeline.length ? fullTimeline[fullTimeline.length - 1].end_ms : 0;
   const fullCurrentMs = currentSeg ? Math.round(audioProgress * fullDurationMs) : 0;
 
+  // Rakaat chapter markers along the scrubber. For each rakaat (1..6), find the
+  // FIRST segment that maps to that rakaat's opening slide.
+  const rakaatMarkers = useMemo(() => {
+    if (!fullTimeline || !fullTimeline.length || !fullDurationMs || !slides.length) return [];
+    const out = [];
+    const seenRakaats = new Set();
+    for (let i = 0; i < fullTimeline.length; i++) {
+      const seg = fullTimeline[i];
+      const slide = slides[seg.slide_idx];
+      const r = slide?.rakaat;
+      if (r && !seenRakaats.has(r)) {
+        seenRakaats.add(r);
+        out.push({ rakaat: r, ratio: seg.start_ms / fullDurationMs, start_ms: seg.start_ms });
+      }
+    }
+    return out.sort((a, b) => a.rakaat - b.rakaat);
+  }, [fullTimeline, fullDurationMs, slides]);
+
   return (
     <div className="relative mx-auto w-full max-w-[480px] bg-black" data-testid="dua-page">
       {/* Fixed overlay header */}
@@ -1467,7 +1485,7 @@ export default function DuaPage() {
                   if (e.key === "Home")        { el.currentTime = 0; }
                   if (e.key === "End")         { el.currentTime = el.duration; }
                 }}
-                className="relative h-8 flex-1 cursor-pointer touch-none"
+                className="relative h-10 flex-1 cursor-pointer touch-none"
                 style={{ WebkitTapHighlightColor: "transparent" }}
               >
                 {/* Track */}
@@ -1481,6 +1499,41 @@ export default function DuaPage() {
                     }}
                   />
                 </div>
+                {/* Rakaat chapter markers (tiny golden ticks above the bar) */}
+                {rakaatMarkers.map((mark) => {
+                  const reached = audioProgress * fullDurationMs >= mark.start_ms;
+                  return (
+                    <button
+                      key={mark.rakaat}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const el = audioRef.current;
+                        if (!el || !el.duration) return;
+                        el.currentTime = mark.start_ms / 1000;
+                      }}
+                      data-testid={`dua-ambient-marker-${mark.rakaat}`}
+                      aria-label={`Jump to Rakaat ${["", "I", "II", "III", "IV", "V", "VI"][mark.rakaat]}`}
+                      className="absolute top-1/2 flex h-6 -translate-y-1/2 -translate-x-1/2 flex-col items-center justify-center tap-scale"
+                      style={{ left: `${mark.ratio * 100}%` }}
+                    >
+                      <span
+                        className="h-3 w-[2px] rounded-full transition-all"
+                        style={{
+                          background: reached ? "#F4D88A" : "rgba(232,195,106,0.45)",
+                          boxShadow: reached ? "0 0 10px rgba(244,216,138,0.75)" : "none",
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="absolute -bottom-3 text-[8px] tracking-[0.18em] transition-colors"
+                        style={{ color: reached ? "#F4D88A" : "rgba(247,243,236,0.32)" }}
+                      >
+                        {["", "I", "II", "III", "IV", "V", "VI"][mark.rakaat]}
+                      </span>
+                    </button>
+                  );
+                })}
                 {/* Thumb */}
                 <div
                   className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#F4D88A] shadow-[0_0_16px_#F4D88A] transition-[left] duration-150 ease-linear"

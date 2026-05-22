@@ -3112,7 +3112,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 2:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 4:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3121,6 +3121,16 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     timeline = []
     cur_ms = 0
     import hashlib
+
+    # Pre-computed silence: 4 MP3 frames at 128 kbps / 44.1 kHz ≈ 104 ms of silence.
+    # Frame size = floor(144 * 128000 / 44100) + padding(0) = 417 bytes exactly.
+    # Header `\xff\xfb\x90\x44` = sync + MPEG1 + Layer3 + protected + 128 kbps + 44.1 kHz + no padding + Stereo.
+    # We use real silent frames so the player doesn't pop or lose sync at segment boundaries.
+    SILENCE_FRAME = b"\xff\xfb\x90\x44" + b"\x00" * 413  # total exactly 417 bytes
+    SILENCE_MS_PER_FRAME = 26.122  # 1152 samples / 44100 Hz
+    GAP_FRAMES = 4  # ~104 ms of silence between segments
+    GAP_BYTES = SILENCE_FRAME * GAP_FRAMES
+    GAP_MS = int(GAP_FRAMES * SILENCE_MS_PER_FRAME)
 
     for entry in plan:
         if entry["kind"] == "verse":
@@ -3136,9 +3146,6 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
         seg = await _synthesize_arabic_mp3(cache_key, text, voice_id)
         seg_ms = _mp3_duration_ms(seg)
         repeat = max(1, int(entry.get("repeat", 1)))
-
-        # Strip ID3v2 + Info-header frame from EVERY chunk so the concatenated
-        # stream is pure raw MPEG frames with no misleading duration metadata.
         raw = _strip_mp3_headers(seg)
 
         for r in range(repeat):
@@ -3153,6 +3160,9 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
                 "repeat_total": repeat,
             })
             cur_ms += seg_ms
+            # Gentle gap between segments to avoid audible pops
+            chunks.append(GAP_BYTES)
+            cur_ms += GAP_MS
 
     full = b"".join(chunks)
     await db.dua_full_audio_cache.update_one(
@@ -3165,7 +3175,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 2,
+            "schema": 4,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
