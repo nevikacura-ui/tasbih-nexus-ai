@@ -54,7 +54,12 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) navigate("/", { replace: true });
+    // Only bounce away from /login if the user is a real (signed-in) member.
+    // Guests have an auto-created silent session — they MUST be allowed on /login
+    // so they can complete invite + Google sign-in.
+    if (!loading && user && user.status && user.status !== "guest") {
+      navigate("/", { replace: true });
+    }
   }, [user, loading, navigate]);
 
   const verifyCodes = async (e) => {

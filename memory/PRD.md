@@ -27,6 +27,13 @@ The experience should feel:
 - **Family / parent** — uses family circles, parenting resources (future)
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
+## Latest fix — Sign-in page redirect bug (Feb, 2026)
+- **Symptom (user-reported)**: From `/circles` and `/profile`, tapping the "Sign in" CTA on the gated `LoginRequired` screen landed back on Home instead of `/login`.
+- **Root cause**: `auth.js` silently bootstraps every visitor with a guest session via `/api/auth/guest`. `Login.jsx` had a `useEffect` that redirected away from `/login` whenever `user` was truthy — which was always true once the guest session was created.
+- **Fix** (`/app/frontend/src/pages/Login.jsx`): only redirect away from `/login` when `user.status !== "guest"`. Guests must be allowed to stay on `/login` to complete the invite + Google flow.
+- **Verified**: Playwright run — from both `/circles` and `/profile`, tapping the Sign-in CTA now lands correctly on `/login` showing the invitation-code form.
+
+
 
 ## Latest sprint — Du'a P0 fix + P1 batch (May 22, 2026)
 
