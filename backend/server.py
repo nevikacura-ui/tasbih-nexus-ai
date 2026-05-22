@@ -3112,7 +3112,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 4:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 5:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3128,25 +3128,38 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     # We use real silent frames so the player doesn't pop or lose sync at segment boundaries.
     SILENCE_FRAME = b"\xff\xfb\x90\x44" + b"\x00" * 413  # total exactly 417 bytes
     SILENCE_MS_PER_FRAME = 26.122  # 1152 samples / 44100 Hz
-    GAP_FRAMES = 4  # ~104 ms of silence between segments
+    GAP_FRAMES = 4  # ~104 ms of silence between regular verses
     GAP_BYTES = SILENCE_FRAME * GAP_FRAMES
     GAP_MS = int(GAP_FRAMES * SILENCE_MS_PER_FRAME)
+    # Longer contemplative breath between rakaats (sajda-like pause)
+    RAKAAT_GAP_FRAMES = 57  # ~1.49 s of silence at every rakaat boundary
+    RAKAAT_GAP_BYTES = SILENCE_FRAME * RAKAAT_GAP_FRAMES
+    RAKAAT_GAP_MS = int(RAKAAT_GAP_FRAMES * SILENCE_MS_PER_FRAME)
 
+    prev_rakaat = None
     for entry in plan:
         if entry["kind"] == "verse":
             d = entry["dua"]
             text = d.get("arabic") or ""
             cache_key = f"dua:{voice_key}:{d['id']}"
             seg_id = d["id"]
+            cur_rakaat = d.get("rakaat")
         else:
             text = entry["name"]
             cache_key = f"imam:{voice_key}:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
             seg_id = f"imam:{text}"
+            cur_rakaat = prev_rakaat  # Tasbih card stays inside its rakaat
 
         seg = await _synthesize_arabic_mp3(cache_key, text, voice_id)
         seg_ms = _mp3_duration_ms(seg)
         repeat = max(1, int(entry.get("repeat", 1)))
         raw = _strip_mp3_headers(seg)
+
+        # If we just crossed a rakaat boundary, insert a longer breath first
+        if prev_rakaat is not None and cur_rakaat is not None and cur_rakaat != prev_rakaat:
+            chunks.append(RAKAAT_GAP_BYTES)
+            cur_ms += RAKAAT_GAP_MS
+        prev_rakaat = cur_rakaat
 
         for r in range(repeat):
             chunks.append(raw)
@@ -3175,7 +3188,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 4,
+            "schema": 5,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
