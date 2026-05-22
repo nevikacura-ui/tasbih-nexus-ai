@@ -3191,6 +3191,13 @@ def _build_full_playlist() -> list[dict]:
                     "kind": "verse", "dua": a, "slide_idx": slide_idx,
                     "repeat": int(a.get("repeat", 1)),
                 })
+                # Mid-insert verse (e.g. "Yā 'Aly yā Muhammad" between halves)
+                mi = a.get("mid_insert")
+                if mi and mi.get("kind") == "verse" and mi.get("arabic"):
+                    plan.append({
+                        "kind": "mid", "parent_id": a["id"], "mi": mi,
+                        "slide_idx": slide_idx, "repeat": int(mi.get("repeat", 1)),
+                    })
                 if b:
                     plan.append({
                         "kind": "verse", "dua": b, "slide_idx": slide_idx,
@@ -3268,7 +3275,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 7:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 8:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3302,6 +3309,12 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             cache_key = f"dua:{voice_key}:{d['id']}"
             seg_id = d["id"]
             cur_rakaat = d.get("rakaat")
+        elif entry["kind"] == "mid":
+            mi = entry["mi"]
+            text = mi.get("arabic") or ""
+            seg_id = f"{entry['parent_id']}_mid"
+            cache_key = f"dua:{voice_key}:{seg_id}"
+            cur_rakaat = prev_rakaat
         else:
             display_name = entry["name"]
             # cache key uses the display name so it's stable across normalizations
@@ -3348,7 +3361,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 7,
+            "schema": 8,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
