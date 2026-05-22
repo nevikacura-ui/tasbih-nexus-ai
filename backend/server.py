@@ -3050,6 +3050,25 @@ def _resolve_voice(voice: str) -> tuple[str, str]:
     return key, _ELEVEN_VOICES[key]
 
 
+def _tts_normalize_imam_name(name: str) -> str:
+    """Rewrite an Imam name for ElevenLabs so the Arabic wasl (definite-article
+    elision) is naturally pronounced. "Mawlana al-Mustansir" should sound like
+    "Mawlana-nal Mustansir" — but ElevenLabs reads "al-" as a separate English
+    syllable, so we splice it inline. Cosmetic display names in the UI stay
+    unchanged; this only affects the audio payload.
+    """
+    if not name:
+        return name
+    out = name
+    # Trailing "al-X" inside an Imam name should be pronounced with elision.
+    # Replace " al-" with "n-" so the prior vowel carries into the lām.
+    out = out.replace(" al-", "n-")
+    out = out.replace(" Al-", "n-")
+    # Lowercase pronunciation hint for inner-particle "ibn"
+    out = out.replace(" ibn ", " ibn-")
+    return out
+
+
 async def _synthesize_arabic_mp3(cache_key: str, text: str, voice_id: str) -> bytes:
     """Generate Arabic MP3, cache by cache_key in MongoDB. Idempotent per voice."""
     if not text or not text.strip():
@@ -3114,8 +3133,10 @@ async def get_tasbih_name_audio(
     """Stream recitation of a single Imam name (cached by name + voice)."""
     import hashlib
     voice_key, voice_id = _resolve_voice(voice)
+    tts_text = _tts_normalize_imam_name(name)
+    # Cache key uses the ORIGINAL display name so callers don't have to know about normalization
     key = f"imam:{voice_key}:" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
-    audio = await _synthesize_arabic_mp3(key, name, voice_id)
+    audio = await _synthesize_arabic_mp3(key, tts_text, voice_id)
     return Response(
         content=audio,
         media_type="audio/mpeg",
@@ -3247,7 +3268,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 6:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 7:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3282,9 +3303,11 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             seg_id = d["id"]
             cur_rakaat = d.get("rakaat")
         else:
-            text = entry["name"]
-            cache_key = f"imam:{voice_key}:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
-            seg_id = f"imam:{text}"
+            display_name = entry["name"]
+            # cache key uses the display name so it's stable across normalizations
+            cache_key = f"imam:{voice_key}:" + hashlib.sha1(display_name.encode("utf-8")).hexdigest()[:16]
+            seg_id = f"imam:{display_name}"
+            text = _tts_normalize_imam_name(display_name)
             cur_rakaat = prev_rakaat  # Tasbih card stays inside its rakaat
 
         seg = await _synthesize_arabic_mp3(cache_key, text, voice_id)
@@ -3325,7 +3348,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 6,
+            "schema": 7,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,

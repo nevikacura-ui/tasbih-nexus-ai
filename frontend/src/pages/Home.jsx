@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Sparkles, BookOpen, Heart, ArrowRight, Flame, Calendar, Users, HandHeart, Moon, Bell, Star } from "lucide-react";
 import MobileShell from "../components/MobileShell";
 import { NoorBackdrop } from "../components/NoorBackdrop";
+import { InstallAppButton } from "../components/InstallAppBanner";
 import { RamadanCard } from "./Quran";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
@@ -345,6 +346,9 @@ export default function HomePage() {
         {/* Quiet credit — a small thank-you to the curators */}
         <section className="mt-10 px-5 pb-2" data-testid="home-credit-section">
           <div className="mx-auto max-w-xs text-center">
+            <div className="mx-auto mb-5 flex justify-center">
+              <InstallAppButton testId="home-install-app-btn" />
+            </div>
             <div className="mx-auto h-px w-12 bg-gradient-to-r from-transparent via-deep/20 to-transparent" />
             <p className="mt-4 text-[10px] uppercase tracking-[0.28em] text-deep/40">
               Curated with care

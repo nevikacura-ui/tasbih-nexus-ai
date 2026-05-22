@@ -972,10 +972,10 @@ DUA: list[dict] = [
     {
         "id": "r6_11_mawlana_aly",
         "rakaat": 6, "order": 11, "situation": "rakaat-6",
-        "title": "Mawlana Aly",
-        "transliteration": "Allāhumma bi haqqi Mawlānā 'Aly",
-        "english": "O Allah, in the name of our Lord Aly.",
-        "arabic": "اللَّهُمَّ بِحَقِّ مَوْلَانَا عَلِيٍّ",
+        "title": "Our Lord",
+        "transliteration": "Allāhumma bi haqqi Mawlānā",
+        "english": "O Allah, in the name of our Lord.",
+        "arabic": "اللَّهُمَّ بِحَقِّ مَوْلَانَا",
         "interlude_after": {
             "kind": "imam_list",
             "id": "tasbih_imams",

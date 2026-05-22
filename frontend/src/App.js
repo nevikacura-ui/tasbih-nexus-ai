@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 import SplashScreen from "./components/SplashScreen";
 import ReminderToaster from "./components/ReminderToaster";
+import InstallAppBanner from "./components/InstallAppBanner";
 import LoginRequired from "./components/LoginRequired";
 import AuthCallback from "./pages/AuthCallback";
 import LoginPage from "./pages/Login";
@@ -123,6 +124,7 @@ export default function App() {
     <AuthProvider>
       {showSplash && <SplashScreen />}
       <ReminderToaster />
+      <InstallAppBanner />
       <Router />
     </AuthProvider>
   );

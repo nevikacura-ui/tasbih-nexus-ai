@@ -411,12 +411,25 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
             const ticked = recited.has(i);
             const isActive = activeIdx === i;
             return (
-              <li key={`${n}-${i}`}>
+              <li key={`${n}-${i}`} className="relative">
+                {/* 0.5 s gold pulse that re-runs each time this row becomes active */}
+                {isActive && (
+                  <span
+                    key={`pulse-${activeIdx}`}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-xl"
+                    style={{
+                      animation: "imam-name-pulse 700ms ease-out 1",
+                      boxShadow: `0 0 28px ${theme.accent}, 0 0 12px ${theme.accent}aa inset`,
+                      background: `radial-gradient(ellipse at center, ${theme.accent}33 0%, transparent 70%)`,
+                    }}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => toggle(i)}
                   data-testid={`dua-imam-tick-${i + 1}`}
-                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-all tap-scale ${
+                  className={`relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-all tap-scale ${
                     isActive ? "scale-[1.02]" : ""
                   } ${isLast || isActive ? "border" : ""}`}
                   style={
