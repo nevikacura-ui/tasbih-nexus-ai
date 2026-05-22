@@ -1,7 +1,12 @@
 # Tasbih.ai — Test Credentials
 
-## Invite-only gate is ON
-Two codes from two **different** inviters are required (founder codes are exempt — they bypass the same-issuer check). After verify → user enters name/email/WhatsApp → MSG91 sends a 6-digit OTP → 90-day session.
+## Auth flow (as of pre-audit, May 22 2026)
+Two codes from two **different** inviters → **Google Sign-in (mandatory)** → 90-day session.
+Founder codes (`founder:true` in MongoDB) bypass the same-issuer check.
+
+MSG91 WhatsApp OTP path is **hidden** behind a frontend feature flag (`OTP_LOGIN_ENABLED=false`
+in `/app/frontend/src/pages/Login.jsx`). Backend endpoints `/api/auth/otp/send` and
+`/api/auth/otp/verify` still exist for emergency rollback but are not surfaced in the UI.
 
 ## 30 Founder Invitation Codes (8-char alphanumeric, no 0/O/1/I)
 All have `issued_by:"system"` and `founder:true` in MongoDB. Pair them as you like:
@@ -15,12 +20,39 @@ All have `issued_by:"system"` and `founder:true` in MongoDB. Pair them as you li
 26. REE75BCT    27. 9A8Y2C57    28. R2EZ9W6Y    29. 649PJKUW    30. 7HDEAU36
 ```
 
-Owner uses pair 1: **RR43CLBG + 3TLB2RK4**
+Owner pair (recommended for testing): **RR43CLBG + 3TLB2RK4**
 
-## MSG91 OTP
-- `MSG91_AUTH_KEY` is set in backend/.env
-- `MSG91_OTP_TEMPLATE_ID` is **NOT YET SET** — owner must paste it after creating the OTP template in the MSG91 dashboard with `##OTP##` placeholder.
-- Without the template ID, `/api/auth/otp/send` returns `500 OTP service not configured (MSG91_OTP_TEMPLATE_ID missing).`
+## Google Sign-in
+- Frontend redirect: `https://auth.emergentagent.com/?redirect=<window.location.origin>/`
+- Returns to `/` with `#session_id=…` in the URL hash
+- `AuthCallback.jsx` reads the hash, POSTs `{ session_id, pending_token }` to `/api/auth/session`
+- Backend calls `https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data` with `X-Session-ID` header to fetch the verified user identity
+- 90-day session cookie (`session_token`, HttpOnly + Secure + SameSite=None)
 
 ## Guest path
-`POST /api/auth/guest` still exists as a backend route but the Login UI no longer exposes it (invite gate is on). Can be invoked directly for backend testing only.
+`POST /api/auth/guest` still exists. Guests can use Home, Noor AI, Dua, Jamatkhanas, and the
+50-Imam Tasbih card. Tapping Circles/Profile triggers the `<LoginRequired>` wall.
+
+## Manual session bypass for backend testing
+```python
+import asyncio, sys, uuid
+from datetime import datetime, timezone, timedelta
+sys.path.insert(0, '/app/backend')
+from server import db
+async def main():
+    uid = f"user_{uuid.uuid4().hex[:12]}"
+    tok = f"audit_{uuid.uuid4().hex[:16]}"
+    await db.users.insert_one({
+        "user_id": uid, "email": "audit@tasbih.ai",
+        "name": "Audit Tester", "status": "member",
+        "created_at": datetime.now(timezone.utc),
+    })
+    await db.user_sessions.insert_one({
+        "user_id": uid, "session_token": tok,
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=90),
+        "created_at": datetime.now(timezone.utc),
+    })
+    print(f"BEARER={tok}")
+asyncio.run(main())
+```
+Then: `curl -H "Authorization: Bearer $BEARER" "$API/api/auth/me"`

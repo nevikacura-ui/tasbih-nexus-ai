@@ -8,6 +8,9 @@ import { NoorBackdrop } from "../components/NoorBackdrop";
 // Invite-only gate ON: requires 2 codes from 2 DIFFERENT inviters
 // (founder codes are exempt from the same-issuer check).
 const INVITE_GATE_ENABLED = true;
+// Legacy MSG91 WhatsApp OTP path — hidden as of pre-audit (Google Auth is now mandatory).
+// Flip back to `true` only if you ever need to re-enable the OTP path.
+const OTP_LOGIN_ENABLED = false;
 
 const COUNTRY_CODES = [
   { code: "+1", label: "🇨🇦/🇺🇸 +1" },
@@ -36,8 +39,8 @@ export default function LoginPage() {
       return { c1: (sp.get("c1") || "").toUpperCase().slice(0, 12), c2: (sp.get("c2") || "").toUpperCase().slice(0, 12) };
     } catch { return { c1: "", c2: "" }; }
   })();
-  // steps: invite → register → otp → google (legacy)
-  const [step, setStep] = useState(INVITE_GATE_ENABLED ? "invite" : "register");
+  // steps: invite → google (default) | invite → register → otp (legacy, behind OTP_LOGIN_ENABLED)
+  const [step, setStep] = useState(INVITE_GATE_ENABLED ? "invite" : "google");
   const [code1, setCode1] = useState(initialCodes.c1);
   const [code2, setCode2] = useState(initialCodes.c2);
   const [pendingToken, setPendingToken] = useState("");
@@ -69,7 +72,8 @@ export default function LoginPage() {
       });
       setPendingToken(r.data.pending_token);
       sessionStorage.setItem("pending_invite_token", r.data.pending_token);
-      setStep("register");
+      // Default path: straight to Google handoff. OTP path kept behind feature flag.
+      setStep(OTP_LOGIN_ENABLED ? "register" : "google");
     } catch (e2) {
       setErr(e2?.response?.data?.detail || "Could not verify codes.");
     } finally { setBusy(false); }
@@ -173,7 +177,66 @@ export default function LoginPage() {
             </form>
           )}
 
-          {step === "register" && (
+          {step === "google" && (
+            <div className="space-y-3" data-testid="google-auth-form">
+              <div className="glass shadow-soft rounded-3xl p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-deep" />
+                  <p className="font-display text-base text-deep">One last step</p>
+                </div>
+                <p className="text-xs text-deep/60 leading-relaxed">
+                  Your invitation is verified. Sign in with Google so we know it's really you. We use Google only to verify your identity — never to post or read anything.
+                </p>
+
+                {/* Tiny chip showing the verified codes */}
+                <div className="flex items-center gap-2 rounded-2xl bg-emerald-50/60 px-3 py-2 text-[11px] text-emerald-800/80">
+                  <ShieldCheck className="h-3 w-3 shrink-0" />
+                  <span>Codes verified · 2 different members vouched for you</span>
+                </div>
+              </div>
+
+              {err && <ErrorBox testid="google-error">{err}</ErrorBox>}
+
+              {/*
+                REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+                The redirect must come from the live browser origin so Emergent Auth can route back
+                to the exact preview/production domain. Returning to "/" lets <Router /> detect the
+                session_id hash and render <AuthCallback /> which finishes the exchange.
+              */}
+              <button
+                type="button"
+                data-testid="google-signin-btn"
+                onClick={() => {
+                  const redirectUrl = window.location.origin + "/";
+                  window.location.href =
+                    "https://auth.emergentagent.com/?redirect=" +
+                    encodeURIComponent(redirectUrl);
+                }}
+                className="bg-emerald-gradient text-ivory shadow-elegant flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-medium tap-scale"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[12px] font-bold text-[#0F3D36]"
+                  style={{ fontFamily: "Arial, sans-serif" }}
+                >
+                  G
+                </span>
+                Continue with Google
+                <ArrowRight className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setStep("invite"); setErr(null); }}
+                data-testid="google-back"
+                className="block w-full text-center text-[11px] text-deep/55 tap-scale"
+              >
+                ← Use different invitation codes
+              </button>
+            </div>
+          )}
+
+          {OTP_LOGIN_ENABLED && step === "register" && (
             <form onSubmit={sendOtp} className="space-y-3" data-testid="register-form">
               <div className="glass shadow-soft rounded-3xl p-5 space-y-3">
                 <div className="flex items-center gap-2">
@@ -251,7 +314,7 @@ export default function LoginPage() {
             </form>
           )}
 
-          {step === "otp" && (
+          {OTP_LOGIN_ENABLED && step === "otp" && (
             <form onSubmit={verifyOtp} className="space-y-3" data-testid="otp-form">
               <div className="glass shadow-soft rounded-3xl p-5 space-y-3">
                 <div className="flex items-center gap-2">

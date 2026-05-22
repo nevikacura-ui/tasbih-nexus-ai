@@ -273,7 +273,7 @@ async def auth_session(request: Request, response: Response):
     response.set_cookie(
         key="session_token",
         value=session_token,
-        max_age=7 * 24 * 60 * 60,
+        max_age=90 * 24 * 60 * 60,
         httponly=True,
         secure=True,
         samesite="none",
