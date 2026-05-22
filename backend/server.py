@@ -3795,6 +3795,10 @@ async def seed_data():
                 "address": addr,
                 "type": "jamatkhana",
                 "seed_version": 5,
+                # `geocoded` tracks Google Maps Geocoding API refinement state.
+                # New rows start False → the boot-time `_geocode_pending_jks` task picks them up
+                # and updates lat/lng to building-level precision.
+                "geocoded": False,
             }
             for i, (name, city, country, lat, lng, addr) in enumerate(jks, start=1)
         ])
@@ -3848,6 +3852,100 @@ async def on_startup():
     logger.info("Tasbih.ai backend ready")
     # Fire-and-forget background pre-warm of audio cache
     asyncio.create_task(_prewarm_audio_cache())
+    # Fire-and-forget background geocoder — refines hand-coded JK coords to building precision
+    asyncio.create_task(_geocode_pending_jks())
+
+
+async def _geocode_pending_jks():
+    """Use Google Maps Geocoding API to refine `lat`/`lng` of every JK whose
+    `geocoded` flag is False. Runs once per boot in the background; gentle
+    rate-limit; idempotent (skips already-geocoded rows). When a row's seed
+    is bumped (delete + reinsert), the flag resets to False so the next boot
+    re-geocodes the fresh batch.
+
+    Why client-side at boot: address quality varies across our seeded list, so
+    a one-time API pass at startup gives building-level precision for prayer
+    times and map plotting — without paying for geocoding on every page load.
+    """
+    key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not key:
+        logger.info("geocoder: GOOGLE_MAPS_API_KEY not set — skipping JK refine")
+        return
+    # Give the audio prewarm a head-start so we don't compete for CPU on boot
+    await asyncio.sleep(8)
+    try:
+        pending = await db.jamatkhanas.find(
+            {"geocoded": {"$ne": True}}, {"_id": 0, "jk_id": 1, "name": 1, "address": 1, "city": 1, "country": 1, "lat": 1, "lng": 1},
+        ).to_list(length=2000)
+        if not pending:
+            return
+        logger.info(f"geocoder: refining {len(pending)} jamatkhana(s)")
+        updated = 0
+        failed = 0
+        async with httpx.AsyncClient(timeout=15) as hc:
+            for jk in pending:
+                # Build the best query: prefer full address; fall back to "name, city, country".
+                addr = (jk.get("address") or "").strip()
+                if addr and addr != jk.get("city"):
+                    query = f"{addr}, {jk.get('country', '')}".strip(", ")
+                else:
+                    query = f"{jk.get('name', '')}, {jk.get('city', '')}, {jk.get('country', '')}".strip(", ")
+                try:
+                    r = await hc.get(
+                        "https://maps.googleapis.com/maps/api/geocode/json",
+                        params={"address": query, "key": key},
+                    )
+                    data = r.json()
+                except Exception as e:
+                    logger.warning(f"geocoder: network error on {jk['jk_id']}: {e}")
+                    failed += 1
+                    await asyncio.sleep(0.4)
+                    continue
+
+                if data.get("status") != "OK" or not data.get("results"):
+                    # Mark as failed so we don't retry forever; ZERO_RESULTS is common
+                    # for short text-only entries (e.g. "Hounslow Jamatkhana") and not worth retrying.
+                    await db.jamatkhanas.update_one(
+                        {"jk_id": jk["jk_id"]},
+                        {"$set": {"geocoded": "failed", "geocode_status": data.get("status", "ERROR")}},
+                    )
+                    failed += 1
+                    await asyncio.sleep(0.15)
+                    continue
+
+                top = data["results"][0]
+                loc = top.get("geometry", {}).get("location", {})
+                loc_type = top.get("geometry", {}).get("location_type", "UNKNOWN")
+                new_lat = loc.get("lat")
+                new_lng = loc.get("lng")
+                # Only accept reasonably precise results — APPROXIMATE often returns a city
+                # centroid that's worse than our hand-coded estimate, so skip it.
+                accept = loc_type in ("ROOFTOP", "RANGE_INTERPOLATED", "GEOMETRIC_CENTER")
+                if accept and new_lat is not None and new_lng is not None:
+                    await db.jamatkhanas.update_one(
+                        {"jk_id": jk["jk_id"]},
+                        {"$set": {
+                            "lat": round(new_lat, 6),
+                            "lng": round(new_lng, 6),
+                            "geocoded": True,
+                            "geocode_location_type": loc_type,
+                            "geocode_formatted_address": top.get("formatted_address"),
+                            "geocoded_at": datetime.now(timezone.utc),
+                        }},
+                    )
+                    updated += 1
+                else:
+                    await db.jamatkhanas.update_one(
+                        {"jk_id": jk["jk_id"]},
+                        {"$set": {
+                            "geocoded": "skipped",
+                            "geocode_location_type": loc_type,
+                        }},
+                    )
+                await asyncio.sleep(0.15)  # gentle on the API
+        logger.info(f"geocoder: done — refined {updated}, failed {failed}, skipped {len(pending) - updated - failed}")
+    except Exception as e:
+        logger.warning(f"geocoder: task error: {e}")
 
 
 app.include_router(api)
