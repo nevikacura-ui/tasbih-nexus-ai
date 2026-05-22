@@ -3640,7 +3640,7 @@ async def seed_data():
             ("Ismaili Centre Houston (under construction)", "Houston", "United States", 29.7589, -95.3960, "Allen Pkwy / Buffalo Bayou, Houston, TX"),
             ("Katy Jamatkhana", "Katy", "United States", 29.7497, -95.7853, "25819 Westheimer Pkwy, Katy, TX 77494"),
             ("Pioneer Community Center (Overflow)", "Sugar Land", "United States", 29.5870, -95.6280, "Pioneer Community Center, Sugar Land area, TX"),
-            ("Ismaili Jamatkhana - Spring", "Spring", "United States", 30.0985, -95.4598, "24525 Community Center Dr, Spring, TX 77389"),
+            ("Ismaili Jamatkhana - Spring", "Spring", "United States", 30.0959, -95.4522, "24525 Community Center Dr, Spring, TX 77389"),
             ("Ismaili Jamatkhana - Clear Lake", "Houston", "United States", 29.5510, -95.1486, "350 FM1959, Houston, TX 77034"),
             # Smaller Texas cities
             ("Port Arthur Jamatkhana (Beaumont)", "Port Arthur", "United States", 29.9043, -93.9457, "8626 Tara Ln, Port Arthur, TX 77642"),
