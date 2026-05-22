@@ -3202,10 +3202,43 @@ async def seed_data():
         ])
 
 
+async def _prewarm_audio_cache():
+    """Pre-cache verse 1 of each rakaat for both voices so first-tap is instant.
+    Runs in background — fire-and-forget. Idempotent: skips already-cached entries."""
+    if not _ELEVEN_KEY:
+        return
+    try:
+        seen_rakaats = set()
+        warmup = []
+        # Always include the very first card of each rakaat (lowest 'order')
+        for d in sorted(DUA, key=lambda x: (x.get("rakaat", 0), x.get("order", 0))):
+            r = d.get("rakaat")
+            if r and r not in seen_rakaats:
+                seen_rakaats.add(r)
+                warmup.append(d)
+        # Pre-cache the first Imam name as well (most-tapped on Tasbih card)
+        for voice_key, voice_id in _ELEVEN_VOICES.items():
+            for d in warmup:
+                cache_key = f"dua:{voice_key}:{d['id']}"
+                existing = await db.dua_audio_cache.find_one({"_id": cache_key}, {"_id": 1})
+                if existing:
+                    continue
+                try:
+                    await _synthesize_arabic_mp3(cache_key, d.get("arabic", ""), voice_id)
+                    logger.info(f"audio prewarm: {cache_key}")
+                except Exception as e:
+                    logger.warning(f"audio prewarm failed for {cache_key}: {e}")
+        logger.info("audio prewarm complete")
+    except Exception as e:
+        logger.warning(f"audio prewarm task error: {e}")
+
+
 @app.on_event("startup")
 async def on_startup():
     await seed_data()
     logger.info("Tasbih.ai backend ready")
+    # Fire-and-forget background pre-warm of audio cache
+    asyncio.create_task(_prewarm_audio_cache())
 
 
 app.include_router(api)

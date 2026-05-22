@@ -50,7 +50,8 @@ const GrainTexture = () => (
   />
 );
 
-function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading }) {
+function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading, progress }) {
+  const showProgress = isPlaying || (progress && progress > 0 && progress < 1);
   return (
     <div
       data-testid={`dua-half-${item.id}`}
@@ -124,6 +125,24 @@ function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading }) {
           <Languages className="h-3 w-3" />
           Tap for Arabic
         </button>
+      </div>
+
+      {/* Soft progress bar — appears under the card while the verse plays */}
+      <div
+        className={`mt-3 h-[2px] w-full overflow-hidden rounded-full bg-ivory/8 transition-opacity duration-300 ${
+          showProgress ? "opacity-100" : "opacity-0"
+        }`}
+        aria-hidden={!showProgress}
+        data-testid={`dua-progress-${item.id}`}
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-200 ease-linear"
+          style={{
+            width: `${Math.max(0, Math.min(1, progress || 0)) * 100}%`,
+            background: `linear-gradient(90deg, ${accent}88 0%, ${accent} 100%)`,
+            boxShadow: `0 0 12px ${accent}99`,
+          }}
+        />
       </div>
     </div>
   );
@@ -396,7 +415,7 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
   );
 }
 
-function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadingId }) {
+function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadingId, audioProgress }) {
   const theme = RAKAAT_THEMES[pair[0].rakaat] || RAKAAT_THEMES[1];
   const [a, b] = pair;
   const insert = a.mid_insert && a.mid_insert.kind === "verse" ? a.mid_insert : null;
@@ -433,6 +452,7 @@ function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadi
             onPlay={onPlay}
             isPlaying={playingId === a.id}
             isLoading={loadingId === a.id}
+            progress={playingId === a.id ? audioProgress : 0}
           />
 
           {/* Mid insert (between the two duas) */}
@@ -462,6 +482,7 @@ function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadi
               onPlay={onPlay}
               isPlaying={playingId === b.id}
               isLoading={loadingId === b.id}
+              progress={playingId === b.id ? audioProgress : 0}
             />
           )}
         </div>
@@ -493,6 +514,7 @@ export default function DuaPage() {
   const [currentRakaat, setCurrentRakaat] = useState(1);
   const [playingId, setPlayingId] = useState(null);
   const [loadingId, setLoadingId] = useState(null);
+  const [audioProgress, setAudioProgress] = useState(0); // 0..1
   const [autoAdvance, setAutoAdvance] = useState(false);
   const [voice, setVoice] = useState(() => {
     if (typeof window === "undefined") return "male";
@@ -536,6 +558,7 @@ export default function DuaPage() {
     }
     setPlayingId(null);
     setLoadingId(null);
+    setAudioProgress(0);
   }, []);
 
   // Cleanup on unmount
@@ -560,18 +583,25 @@ export default function DuaPage() {
     el.pause();
     setLoadingId(dua.id);
     setPlayingId(null);
+    setAudioProgress(0);
     const url = `${API_BASE}/api/dua/${dua.id}/audio?voice=${voice}`;
     el.src = url;
     el.onended = () => {
       setPlayingId(null);
+      setAudioProgress(1);
       if (autoAdvanceRef.current) {
         // gentle pause, then auto-scroll to next
         setTimeout(() => { scrollToNext(); }, 900);
       }
     };
-    el.onerror = () => { setPlayingId(null); setLoadingId(null); };
+    el.onerror = () => { setPlayingId(null); setLoadingId(null); setAudioProgress(0); };
     el.onplaying = () => { setLoadingId(null); setPlayingId(dua.id); };
-    el.play().catch((e) => { setLoadingId(null); setPlayingId(null); console.warn("audio play failed", e); });
+    el.ontimeupdate = () => {
+      if (el.duration && isFinite(el.duration) && el.duration > 0) {
+        setAudioProgress(Math.min(1, el.currentTime / el.duration));
+      }
+    };
+    el.play().catch((e) => { setLoadingId(null); setPlayingId(null); setAudioProgress(0); console.warn("audio play failed", e); });
   }, [playingId, stopAudio, scrollToNext, voice]);
 
   // Build slides: pairs of duas, plus dedicated interlude slides where requested.
@@ -760,6 +790,7 @@ export default function DuaPage() {
                     onPlay={playDua}
                     playingId={playingId}
                     loadingId={loadingId}
+                    audioProgress={audioProgress}
                   />
                 ) : (
                   <ImamListInterlude
