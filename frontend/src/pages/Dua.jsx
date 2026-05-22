@@ -175,7 +175,7 @@ function MidInsert({ insert, accent }) {
   );
 }
 
-function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete, voice }) {
+function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete, voice, autoPlayActive }) {
   const theme = RAKAAT_THEMES[rakaat] || RAKAAT_THEMES[6];
   const [recited, setRecited] = useState(() => new Set());
   const [playingIdx, setPlayingIdx] = useState(null); // index of name being recited
@@ -251,6 +251,23 @@ function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete
       if (el) { try { el.pause(); } catch (e) { /* ignore */ } }
     };
   }, []);
+
+  // React to parent's master Play All — start/stop reciteAll automatically.
+  // Use a ref-guard so a single autoPlayActive=true edge only triggers one reciteAll.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoPlayActive) {
+      if (!autoStartedRef.current && playingIdx === null) {
+        autoStartedRef.current = true;
+        reciteAll();
+      }
+    } else {
+      // Master paused → stop current recitation if running
+      autoStartedRef.current = false;
+      if (playingIdx !== null) stopRecite();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlayActive]);
 
   const isReciting = playingIdx !== null;
 
@@ -515,7 +532,18 @@ export default function DuaPage() {
   const [playingId, setPlayingId] = useState(null);
   const [loadingId, setLoadingId] = useState(null);
   const [audioProgress, setAudioProgress] = useState(0); // 0..1
-  const [autoAdvance, setAutoAdvance] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem("dua.autoAdvance");
+    return stored === null ? true : stored === "true"; // DEFAULT: Auto
+  });
+  useEffect(() => {
+    try { localStorage.setItem("dua.autoAdvance", String(autoAdvance)); } catch (e) { /* ignore */ }
+  }, [autoAdvance]);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false); // master "Play All" active?
+  const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
+  const isAutoPlayingRef = useRef(false);
+  useEffect(() => { isAutoPlayingRef.current = isAutoPlaying; }, [isAutoPlaying]);
   const [voice, setVoice] = useState(() => {
     if (typeof window === "undefined") return "male";
     return localStorage.getItem("dua.voice") || "male";
@@ -549,6 +577,11 @@ export default function DuaPage() {
       }
     })();
   }, []);
+
+  // slidesRef holds the latest slides array for callbacks that close over an older render.
+  // We declare it before any callbacks reference it; it is hydrated by an effect below
+  // after `slides` is computed.
+  const slidesRef = useRef([]);
 
   // ── Audio playback ─────────────────────────────────────────────
   const stopAudio = useCallback(() => {
@@ -589,9 +622,17 @@ export default function DuaPage() {
     el.onended = () => {
       setPlayingId(null);
       setAudioProgress(1);
-      if (autoAdvanceRef.current) {
-        // gentle pause, then auto-scroll to next
-        setTimeout(() => { scrollToNext(); }, 900);
+      const chain = isAutoPlayingRef.current || autoAdvanceRef.current;
+      if (!chain) return;
+      // If this verse is the TOP of a pair, play the bottom verse next on the same card.
+      const slide = slidesRef.current.find(
+        (s) => s.kind === "pair" && (s.items[0]?.id === dua.id || s.items[1]?.id === dua.id)
+      );
+      const isTopOfPair = slide && slide.items[0]?.id === dua.id && slide.items[1];
+      if (isTopOfPair) {
+        setTimeout(() => playDua(slide.items[1]), 600);
+      } else {
+        setTimeout(() => scrollToNext(), 900);
       }
     };
     el.onerror = () => { setPlayingId(null); setLoadingId(null); setAudioProgress(0); };
@@ -603,6 +644,38 @@ export default function DuaPage() {
     };
     el.play().catch((e) => { setLoadingId(null); setPlayingId(null); setAudioProgress(0); console.warn("audio play failed", e); });
   }, [playingId, stopAudio, scrollToNext, voice]);
+
+  // Master Play All: when the visible slide changes AND auto-play is active AND nothing is currently playing → trigger the right thing
+  useEffect(() => {
+    if (!isAutoPlaying) return;
+    if (playingId || loadingId) return;
+    const slide = slidesRef.current[currentSlideIdx];
+    if (!slide) return;
+    if (slide.kind === "pair") {
+      // Small delay so the snap-scroll lands cleanly first
+      const t = setTimeout(() => { playDua(slide.items[0]); }, 500);
+      return () => clearTimeout(t);
+    }
+    // interlude — handled inside ImamListInterlude via prop
+  }, [currentSlideIdx, isAutoPlaying, playingId, loadingId, playDua]);
+
+  // Toggle master Play All
+  const toggleAutoPlay = useCallback(() => {
+    if (isAutoPlaying) {
+      // Pause everything
+      setIsAutoPlaying(false);
+      stopAudio();
+      return;
+    }
+    setIsAutoPlaying(true);
+    // Kick off the current slide immediately (the effect above handles transitions on scroll, but the first one needs a manual nudge)
+    const slide = slidesRef.current[currentSlideIdx];
+    if (!slide) return;
+    if (slide.kind === "pair") {
+      setTimeout(() => { playDua(slide.items[0]); }, 200);
+    }
+    // For interlude, the prop autoPlayActive will trigger the component's reciteAll
+  }, [isAutoPlaying, currentSlideIdx, playDua, stopAudio]);
 
   // Build slides: pairs of duas, plus dedicated interlude slides where requested.
   // A dua with `interlude_after` becomes a solo card and the interlude follows it.
@@ -636,7 +709,9 @@ export default function DuaPage() {
     return out;
   }, [items]);
 
-  // Track current rakaat as user scrolls
+  // Track current rakaat and slide as user scrolls
+  useEffect(() => { slidesRef.current = slides; }, [slides]);
+
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || slides.length === 0) return;
@@ -646,7 +721,9 @@ export default function DuaPage() {
         entries.forEach((e) => {
           if (e.isIntersecting) {
             const rk = Number(e.target.getAttribute("data-rakaat"));
+            const sIdx = Number(e.target.getAttribute("data-slide-idx"));
             if (rk && rk !== currentRakaat) setCurrentRakaat(rk);
+            if (!Number.isNaN(sIdx)) setCurrentSlideIdx(sIdx);
           }
         });
       },
@@ -729,19 +806,41 @@ export default function DuaPage() {
           </div>
           <button
             type="button"
+            onClick={toggleAutoPlay}
+            data-testid="dua-play-all"
+            aria-pressed={isAutoPlaying}
+            aria-label={isAutoPlaying ? "Pause auto recitation" : "Play full Du'a"}
+            className="flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md transition-all tap-scale"
+            style={{
+              background: isAutoPlaying ? activeTheme.accent : `${activeTheme.accent}22`,
+              borderColor: activeTheme.accent,
+              color: isAutoPlaying ? "#0F3D36" : activeTheme.accent,
+              fontWeight: 600,
+              boxShadow: isAutoPlaying ? `0 0 22px ${activeTheme.accent}66` : "none",
+            }}
+          >
+            {isAutoPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            {isAutoPlaying ? "Pause" : "Play"}
+          </button>
+          <button
+            type="button"
             onClick={() => {
               const next = !autoAdvance;
               setAutoAdvance(next);
-              if (!next) stopAudio();
+              if (!next && isAutoPlaying) {
+                setIsAutoPlaying(false);
+                stopAudio();
+              }
             }}
             data-testid="dua-auto-advance"
             aria-pressed={autoAdvance}
-            aria-label={autoAdvance ? "Disable auto-advance" : "Enable auto-advance"}
+            aria-label={autoAdvance ? "Disable auto chain" : "Enable auto chain"}
+            title={autoAdvance ? "Chain on — each verse flows to the next" : "Chain off — verses play one at a time"}
             className="flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md transition-all tap-scale"
             style={{
-              background: autoAdvance ? activeTheme.accent : "rgba(0,0,0,0.35)",
-              borderColor: autoAdvance ? activeTheme.accent : `${activeTheme.accent}44`,
-              color: autoAdvance ? "#0F3D36" : "rgba(247,243,236,0.85)",
+              background: autoAdvance ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)",
+              borderColor: autoAdvance ? `${activeTheme.accent}77` : "rgba(247,243,236,0.18)",
+              color: autoAdvance ? activeTheme.accent : "rgba(247,243,236,0.6)",
             }}
           >
             <Repeat className="h-3.5 w-3.5" />
@@ -779,6 +878,7 @@ export default function DuaPage() {
               <div
                 key={slide.anchorId}
                 data-rakaat={slide.rakaat}
+                data-slide-idx={idx}
                 {...anchorProps}
               >
                 {slide.kind === "pair" ? (
@@ -800,7 +900,12 @@ export default function DuaPage() {
                     rakaat={slide.rakaat}
                     autoAdvance={autoAdvance}
                     voice={voice}
-                    onComplete={() => { if (autoAdvanceRef.current) setTimeout(scrollToNext, 900); }}
+                    autoPlayActive={isAutoPlaying && currentSlideIdx === idx}
+                    onComplete={() => {
+                      if (isAutoPlayingRef.current || autoAdvanceRef.current) {
+                        setTimeout(scrollToNext, 900);
+                      }
+                    }}
                   />
                 )}
               </div>
