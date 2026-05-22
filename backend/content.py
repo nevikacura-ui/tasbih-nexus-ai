@@ -887,6 +887,18 @@ DUA: list[dict] = [
         "english": "You are the true, manifest Imam.",
         "arabic": "أَنْتَ الْإِمَامُ الْحَقُّ الْمُبِينُ",
     },
+    {
+        # "My Prostration" — closing verse of Rakaat 5, immediately before Rakaat 6 opens.
+        # Rendered as the last card of Rakaat 5 and recited in the master MP3 at the
+        # boundary. (Previously only present as a mid_insert inside r6_14; user
+        # confirmed the canonical position is end of Rakaat 5.)
+        "id": "r5_17_sujoodi",
+        "rakaat": 5, "order": 17, "situation": "rakaat-5",
+        "title": "My Prostration",
+        "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
+        "english": "O Allah, to You is my prostration and obedience.",
+        "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+    },
 
     # ── Rakaat 6 ─────────────────────────────────────────────────────
     {
