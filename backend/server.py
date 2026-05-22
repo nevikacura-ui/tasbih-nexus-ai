@@ -3607,7 +3607,7 @@ async def seed_data():
 
     # ── Jamatkhana directory ──
     # Bumped seed version forces a full reseed so new entries flow in.
-    if await db.jamatkhanas.count_documents({"seed_version": {"$gte": 3}}) == 0:
+    if await db.jamatkhanas.count_documents({"seed_version": {"$gte": 4}}) == 0:
         await db.jamatkhanas.delete_many({})
         jks = [
             # Canada
@@ -3627,13 +3627,31 @@ async def seed_data():
             ("Montreal Jamatkhana", "Montreal", "Canada", 45.5017, -73.5673, "Montreal, QC"),
             ("Winnipeg Jamatkhana", "Winnipeg", "Canada", 49.8951, -97.1384, "Winnipeg, MB"),
             ("Halifax Jamatkhana", "Halifax", "Canada", 44.6488, -63.5752, "Halifax, NS"),
-            # United States
-            ("Ismaili Jamatkhana & Center, Plano", "Plano", "United States", 33.0198, -96.6989, "Plano, TX"),
-            ("Sugarland Jamatkhana", "Sugar Land", "United States", 29.5994, -95.6147, "Sugar Land, TX"),
-            ("Headquarters Jamatkhana Houston", "Houston", "United States", 29.7604, -95.3698, "Houston, TX"),
-            ("Houston SW Jamatkhana", "Houston", "United States", 29.6516, -95.5777, "Houston SW, TX"),
-            ("Austin Jamatkhana", "Austin", "United States", 30.2672, -97.7431, "Austin, TX"),
-            ("San Antonio Jamatkhana", "San Antonio", "United States", 29.4241, -98.4936, "San Antonio, TX"),
+            # United States — Texas (Ismaili Jamatkhanas)
+            # Austin area
+            ("Ismaili Jamatkhana - Cedar Park", "Cedar Park", "United States", 30.5083, -97.8203, "1213 Toro Grande Dr, Cedar Park, TX 78613"),
+            ("Ismaili Jamatkhana - Austin South", "Austin", "United States", 30.2073, -97.7895, "6904 Cooper Ln, Austin, TX 78745"),
+            ("Ismaili Jamatkhana - Austin Downtown (Headquarters)", "Austin", "United States", 30.4090, -97.6914, "12407 N Lamar Blvd, Austin, TX 78753"),
+            # Houston metro
+            ("Principal Jamatkhana - Houston", "Houston", "United States", 29.6646, -95.5826, "11770 South Wilcrest Dr, Houston, TX 77099"),
+            ("Sugar Land Jamatkhana", "Sugar Land", "United States", 29.6010, -95.6395, "Sugar Land, TX"),
+            ("Harvest Green Jamatkhana", "Richmond", "United States", 29.5868, -95.7338, "Harvest Green community, Richmond, TX"),
+            ("Houston Headquarters Jamatkhana (HQ)", "Houston", "United States", 29.7740, -95.4170, "Houston HQ, TX"),
+            ("Ismaili Centre Houston (under construction)", "Houston", "United States", 29.7589, -95.3960, "Allen Pkwy / Buffalo Bayou, Houston, TX"),
+            ("Katy Jamatkhana", "Katy", "United States", 29.7497, -95.7853, "25819 Westheimer Pkwy, Katy, TX 77494"),
+            ("Pioneer Community Center (Overflow)", "Sugar Land", "United States", 29.5870, -95.6280, "Pioneer Community Center, Sugar Land area, TX"),
+            ("Ismaili Jamatkhana - Spring", "Spring", "United States", 30.0985, -95.4598, "24525 Community Center Dr, Spring, TX 77389"),
+            ("Ismaili Jamatkhana - Clear Lake", "Houston", "United States", 29.5510, -95.1486, "350 FM1959, Houston, TX 77034"),
+            # Smaller Texas cities
+            ("Port Arthur Jamatkhana (Beaumont)", "Port Arthur", "United States", 29.9043, -93.9457, "8626 Tara Ln, Port Arthur, TX 77642"),
+            ("Corpus Christi Jamatkhana", "Corpus Christi", "United States", 27.7261, -97.3961, "4455 S Padre Island Dr Suite 12, Corpus Christi, TX 78411"),
+            ("San Antonio Jamatkhana", "San Antonio", "United States", 29.4858, -98.5341, "San Antonio, TX"),
+            ("College Station Jamatkhana", "College Station", "United States", 30.6276, -96.3344, "College Station, TX"),
+            # DFW metro
+            ("Ismaili Jamatkhana - Mid-Cities", "Euless", "United States", 32.8377, -97.0653, "700 E Harwood Rd, Euless, TX 76039"),
+            ("Dallas HQ Jamatkhana & Ismaili Center", "Carrollton", "United States", 32.9579, -96.8902, "2500 Dickerson Pkwy, Carrollton, TX 75006"),
+            ("Ismaili Community Center & Jamatkhana - Plano", "Plano", "United States", 33.0567, -96.7286, "6704 Alma Dr, Plano, TX 75023"),
+            # United States — rest of country
             ("Atlanta Jamatkhana", "Atlanta", "United States", 33.7490, -84.3880, "Atlanta, GA"),
             ("Charlotte Jamatkhana", "Charlotte", "United States", 35.2271, -80.8431, "Charlotte, NC"),
             ("Manhattan Jamatkhana", "New York", "United States", 40.7831, -73.9712, "Upper West Side, NY"),
@@ -3776,7 +3794,7 @@ async def seed_data():
                 "lng": lng,
                 "address": addr,
                 "type": "jamatkhana",
-                "seed_version": 3,
+                "seed_version": 4,
             }
             for i, (name, city, country, lat, lng, addr) in enumerate(jks, start=1)
         ])

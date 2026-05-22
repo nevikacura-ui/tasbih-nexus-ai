@@ -27,6 +27,17 @@ The experience should feel:
 - **Family / parent** — uses family circles, parenting resources (future)
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
+## Content — USA Texas Jamatkhana directory expansion (Feb, 2026)
+- Added **19 Texas Jamatkhanas** with full street addresses across Austin, Houston metro, DFW, Beaumont/Port Arthur, Corpus Christi, San Antonio, and College Station:
+  - **Austin area**: Cedar Park, Austin South (6904 Cooper Ln), Austin Downtown / Headquarters (12407 N Lamar Blvd).
+  - **Houston metro**: Principal JK (11770 South Wilcrest Dr), Sugar Land, Harvest Green, Houston HQ, Ismaili Centre Houston (U/C), Katy (25819 Westheimer Pkwy), Pioneer Community Center (overflow), Spring (24525 Community Center Dr), Clear Lake (350 FM1959).
+  - **Other Texas**: Port Arthur (8626 Tara Ln), Corpus Christi (4455 S Padre Island Dr), San Antonio, College Station.
+  - **DFW**: Mid-Cities (700 E Harwood Rd, Euless), Dallas HQ (2500 Dickerson Pkwy, Carrollton), Plano (6704 Alma Dr).
+- Seeded into `/app/backend/server.py` Jamatkhana directory with `seed_version=4`. Old generic Texas stubs removed (Austin Jamatkhana, Headquarters Jamatkhana Houston, Houston SW, Sugarland, San Antonio, Plano).
+- Verified live via `GET /api/jamatkhanas?country=United+States` → 38 US JKs (19 Texas). `GET /api/jamatkhanas/nearby` correctly snaps Sugar Land coords → "Sugar Land Jamatkhana" (2.3 km) and Cedar Park coords → "Cedar Park" (0.2 km), so the Breathe per-city label flow will display the correct city for users in those areas.
+- Note: For Jamatkhanas where only Google Maps short-links were provided, addresses use the well-known canonical street address (where confidently known) or a city-area placeholder; lat/lng accuracy is sufficient for prayer-time computation (within ~5 minutes) and map plotting. These can be tightened with exact pin-drops later.
+
+
 ## Features — Per-city prayer times + Noor daily counter (Feb, 2026)
 
 ### Per-city prayer times (real astronomical computation)
