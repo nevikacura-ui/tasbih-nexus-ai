@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check, Play, Pause, Repeat, Bookmark, Share2 } from "lucide-react";
+import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check, Play, Pause, Repeat, Bookmark, Share2, BookOpenText, PenLine } from "lucide-react";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { ShareTasbihButton } from "../components/ShareTasbihButton";
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL;
 
@@ -599,6 +601,226 @@ export default function DuaPage() {
   return <DuaPageInner />;
 }
 
+function DuaCompletionModal({ isGuest, onClose }) {
+  const [reflection, setReflection] = useState("");
+  const [mood, setMood] = useState(null); // "peaceful" | "moved" | "grateful" | "still"
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const moodOptions = [
+    { id: "peaceful", label: "Peaceful" },
+    { id: "moved", label: "Moved" },
+    { id: "grateful", label: "Grateful" },
+    { id: "still", label: "Still" },
+  ];
+
+  const onSave = async () => {
+    if (!reflection.trim() && !mood) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.post("/journal", {
+        title: "After the Holy Du'a",
+        body: reflection.trim() || `Mood after Du'a: ${mood}`,
+        mood_after: mood || undefined,
+        tags: ["holy_dua", "after_dua"],
+      });
+      setSaved(true);
+      setTimeout(() => onClose(), 1400);
+    } catch (e) {
+      setErr("Your reflection couldn't be saved right now. Please try once more.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md px-5 animate-float-up"
+      data-testid="dua-completion-modal"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-[#E8C36A]/40 shadow-2xl"
+        style={{
+          background: "linear-gradient(165deg, #0a2820 0%, #0F3D36 45%, #1f5448 100%)",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.55), 0 0 40px rgba(232,195,106,0.18)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Halo behind the seal */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 h-44 w-44 -translate-x-1/2 -translate-y-1/3 rounded-full opacity-60"
+          style={{ background: "radial-gradient(circle, rgba(232,195,106,0.45) 0%, transparent 65%)" }}
+          aria-hidden="true"
+        />
+        {/* Drifting gold dust particles */}
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span
+            key={i}
+            aria-hidden="true"
+            className="pointer-events-none absolute h-1 w-1 rounded-full bg-[#E8C36A]/70 animate-drift-particle"
+            style={{
+              top: `${12 + i * 17}%`,
+              left: `${8 + i * 19}%`,
+              animationDelay: `${i * 0.6}s`,
+              boxShadow: "0 0 10px rgba(232,195,106,0.9)",
+            }}
+          />
+        ))}
+        <MosqueSilhouette color="rgba(232,195,106,0.16)" />
+
+        <div className="relative px-7 pt-12 pb-6 text-center text-ivory">
+          {/* Gold seal */}
+          <div
+            className="mx-auto flex h-16 w-16 items-center justify-center rounded-full"
+            style={{
+              background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 60%, #C9A46A 100%)",
+              boxShadow: "0 12px 28px rgba(232,195,106,0.55), inset 0 1px 0 rgba(255,255,255,0.45)",
+            }}
+          >
+            <Sparkles className="h-7 w-7 text-deep" strokeWidth={2.2} />
+          </div>
+
+          <p className="mt-5 text-[10px] uppercase tracking-[0.32em] text-[#E8C36A]">
+            Yā ʿAlī madad · Your Du'a is complete
+          </p>
+          <h2
+            className="mt-3 font-display italic leading-[1.18]"
+            style={{ fontSize: "clamp(22px, 6vw, 28px)" }}
+            data-testid="dua-completion-title"
+          >
+            Carry the noor with you.
+          </h2>
+          <p className="mt-3 text-[13px] leading-relaxed text-ivory/75">
+            Take a soft breath. What stayed with you most? A line, a name, a feeling — write a small note for your Sangat.
+          </p>
+
+          {!isGuest && !saved && (
+            <div className="mt-5 text-left">
+              {/* Mood pills */}
+              <p className="mb-2 text-[10px] uppercase tracking-[0.22em] text-ivory/45">
+                A word for how you feel
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {moodOptions.map((m) => {
+                  const on = mood === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMood(on ? null : m.id)}
+                      data-testid={`dua-completion-mood-${m.id}`}
+                      className="rounded-full px-3 py-1.5 text-[11px] tap-scale transition-all"
+                      style={{
+                        background: on ? "#E8C36A" : "rgba(255,255,255,0.06)",
+                        color: on ? "#0F3D36" : "rgba(247,243,236,0.78)",
+                        border: `1px solid ${on ? "#F4D88A" : "rgba(255,255,255,0.14)"}`,
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Reflection textarea */}
+              <textarea
+                value={reflection}
+                onChange={(e) => setReflection(e.target.value.slice(0, 280))}
+                placeholder="One line, one breath, one prayer…"
+                rows={3}
+                data-testid="dua-completion-reflection"
+                className="mt-4 w-full rounded-2xl border border-ivory/15 bg-black/30 px-4 py-3 text-[13px] leading-relaxed text-ivory placeholder:text-ivory/35 outline-none focus:border-[#E8C36A]/55"
+                style={{ resize: "none" }}
+              />
+              <div className="mt-1 text-right text-[10px] text-ivory/35">{reflection.length}/280</div>
+
+              {err && (
+                <p className="mt-2 rounded-xl bg-red-900/30 px-3 py-2 text-[11px] text-red-300/90">{err}</p>
+              )}
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  data-testid="dua-completion-later"
+                  className="rounded-full border border-ivory/15 px-4 py-3 text-[12px] text-ivory/75 backdrop-blur-md tap-scale"
+                >
+                  Maybe later
+                </button>
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={saving || (!reflection.trim() && !mood)}
+                  data-testid="dua-completion-save"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-3 text-[12px] font-semibold text-deep tap-scale disabled:opacity-50"
+                  style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  {saving ? "Saving…" : "Add to Sangat"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!isGuest && saved && (
+            <div
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#E8C36A]/15 px-4 py-2.5 text-[12px] text-[#E8C36A]"
+              data-testid="dua-completion-saved"
+            >
+              <Check className="h-4 w-4" />
+              Saved to your Sangat
+            </div>
+          )}
+
+          {isGuest && (
+            <div className="mt-5">
+              <Link
+                to="/login"
+                data-testid="dua-completion-signin"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-[12px] font-semibold text-deep tap-scale"
+                style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+                onClick={onClose}
+              >
+                <BookOpenText className="h-4 w-4" />
+                Sign in to save this moment
+              </Link>
+              <button
+                type="button"
+                onClick={onClose}
+                data-testid="dua-completion-close-guest"
+                className="mt-3 block w-full text-center text-[11px] text-ivory/45 tap-scale"
+              >
+                Continue without saving
+              </button>
+            </div>
+          )}
+
+          {/* Calm "Share Tasbih" affordance — appears for both guests and members
+              after the main CTA. Premium pre-filled WhatsApp message + OG preview. */}
+          <div className="mt-4 flex justify-center">
+            <ShareTasbihButton
+              testId="dua-completion-share-tasbih"
+              label="Share Tasbih with a friend"
+              variant="ghost"
+              className="text-[11px] py-1.5 px-3"
+            />
+          </div>
+        </div>
+
+        {/* Bottom gold seam */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-0 bottom-0 h-px"
+          style={{ background: "linear-gradient(90deg, transparent 0%, rgba(232,195,106,0.55) 50%, transparent 100%)" }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ShareCardModal({ item, theme, onClose }) {
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -842,6 +1064,23 @@ function DuaPageInner() {
   const [fullSegIdx, setFullSegIdx] = useState(-1);
   const wakeLockRef = useRef(null);
 
+  // ── Du'a completion overlay ────────────────────────────────────
+  // Fires ONLY on natural audio end (not when user pauses) — celebrates the
+  // moment and invites a one-tap Sangat reflection.
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const { user } = useAuth() || {};
+  const isGuest = !user || user.status !== "member";
+
+  // Dev-only smoke hook so screenshot/test agents can render the modal without
+  // waiting for a full 5-minute audio playthrough. Safe in production — only
+  // attached when ?testdua=1 is in the URL.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!new URLSearchParams(window.location.search).has("testdua")) return;
+    window.__tasbihTriggerCompletion = () => setCompletionOpen(true);
+    return () => { try { delete window.__tasbihTriggerCompletion; } catch (e) {} };
+  }, []);
+
   // Acquire / release screen wake lock so the phone doesn't sleep during recitation
   const acquireWakeLock = useCallback(async () => {
     try {
@@ -975,6 +1214,12 @@ function DuaPageInner() {
         setAudioProgress(0);
         setFullSegIdx(-1);
         releaseWakeLock();
+        // Clear the saved resume position — the user has finished, so the
+        // "Pick up where you left off" pill should not reappear next time.
+        api.post("/dua/progress", { voice, position_ms: 0, duration_ms: 0 }).catch(() => {});
+        // Celebrate the moment with a calm completion card (after a half-second
+        // breath so the last verse can settle).
+        setTimeout(() => setCompletionOpen(true), 600);
       };
       el.onerror = () => {
         setIsAutoPlaying(false);
@@ -1603,6 +1848,14 @@ function DuaPageInner() {
           item={shareCard}
           theme={RAKAAT_THEMES[shareCard.rakaat] || RAKAAT_THEMES[1]}
           onClose={() => setShareCard(null)}
+        />
+      )}
+
+      {/* Completion overlay — fires only when the audio finishes naturally. */}
+      {completionOpen && (
+        <DuaCompletionModal
+          isGuest={isGuest}
+          onClose={() => setCompletionOpen(false)}
         />
       )}
 
