@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home } from "lucide-react";
+import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check } from "lucide-react";
 import { api } from "../lib/api";
 
 // Cinematic palette per rakaat — mosque-silhouette inspired gradients.
@@ -94,41 +94,8 @@ function DuaHalf({ item, accent, onTapArabic, half }) {
   );
 }
 
-function MidInsert({ insert, accent, onTapNames }) {
-  if (!insert) return null;
-
-  if (insert.kind === "imam_list") {
-    return (
-      <button
-        type="button"
-        onClick={() => onTapNames(insert)}
-        data-testid="dua-mid-imam-list"
-        className="my-4 flex items-center gap-3 rounded-2xl border bg-black/25 px-4 py-3 text-left backdrop-blur-md tap-scale"
-        style={{ borderColor: `${accent}55` }}
-      >
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-          style={{ background: `${accent}25`, border: `1px solid ${accent}55` }}
-        >
-          <Sparkles className="h-4 w-4" style={{ color: accent }} />
-        </div>
-        <div className="flex-1">
-          <p
-            className="text-[10px] uppercase tracking-[0.22em]"
-            style={{ color: accent }}
-          >
-            {insert.title}
-          </p>
-          <p className="mt-0.5 text-[12px] leading-snug text-ivory/85">
-            {insert.subtitle}
-          </p>
-        </div>
-        <span className="text-[10px] text-ivory/55">{insert.names?.length || 0} →</span>
-      </button>
-    );
-  }
-
-  // Default: short verse insert (inline, italic, accent rule)
+function MidInsert({ insert, accent }) {
+  if (!insert || insert.kind !== "verse") return null;
   return (
     <div
       className="my-4 rounded-2xl border bg-black/20 px-4 py-3 text-center backdrop-blur-sm"
@@ -154,10 +121,159 @@ function MidInsert({ insert, accent, onTapNames }) {
   );
 }
 
-function DuaPairCard({ pair, index, total, onTapArabic, onTapNames }) {
+function ImamListInterlude({ data, index, total, rakaat }) {
+  const theme = RAKAAT_THEMES[rakaat] || RAKAAT_THEMES[6];
+  const [recited, setRecited] = useState(() => new Set());
+
+  const toggle = (i) => {
+    setRecited((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+  const reset = () => setRecited(new Set());
+
+  const total_names = data.names?.length || 0;
+  const done = recited.size;
+
+  return (
+    <section
+      data-testid="dua-interlude-imam-list"
+      className="relative flex h-[100svh] w-full snap-start snap-always flex-col overflow-hidden"
+      style={{
+        background: `linear-gradient(180deg, ${theme.from} 0%, ${theme.via} 45%, ${theme.to} 100%)`,
+      }}
+    >
+      <LightRays accent={theme.accent} />
+      <MosqueSilhouette color={`${theme.accent}33`} />
+      <GrainTexture />
+
+      <div className="relative z-10 flex h-full w-full flex-col px-6 pt-24 pb-10">
+        {/* Header */}
+        <div className="px-1">
+          <span
+            className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.22em]"
+            style={{ background: `${theme.accent}22`, color: theme.accent, border: `1px solid ${theme.accent}44` }}
+          >
+            <Sparkles className="h-3 w-3" />
+            Tasbih · Interlude
+          </span>
+          <h2
+            className="mt-3 font-display leading-tight text-ivory"
+            style={{ fontSize: "clamp(22px, 5.6vw, 28px)" }}
+            data-testid="dua-interlude-title"
+          >
+            {data.title}
+          </h2>
+          <p className="mt-1 text-[12px] text-ivory/70 leading-snug">
+            {data.subtitle}
+          </p>
+        </div>
+
+        {/* Progress */}
+        <div className="mt-4 flex items-center justify-between px-1">
+          <p className="text-[11px]" style={{ color: theme.accent }}>
+            <span data-testid="dua-interlude-progress">{done}</span> / {total_names} recited
+          </p>
+          {done > 0 && (
+            <button
+              type="button"
+              onClick={reset}
+              data-testid="dua-interlude-reset"
+              className="text-[10px] uppercase tracking-[0.22em] text-ivory/60 underline-offset-2 hover:underline tap-scale"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        <div className="mt-2 h-px w-full bg-ivory/10 px-1">
+          <div
+            className="h-px transition-all duration-300"
+            style={{ width: `${(done / total_names) * 100}%`, background: theme.accent }}
+          />
+        </div>
+
+        {/* Scrollable name list with tap-to-count */}
+        <ol
+          className="mt-3 flex-1 overflow-y-auto pr-1 space-y-1"
+          data-testid="dua-interlude-names"
+          onTouchStart={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+        >
+          {(data.names || []).map((n, i) => {
+            const isLast = i === total_names - 1;
+            const ticked = recited.has(i);
+            return (
+              <li key={`${n}-${i}`}>
+                <button
+                  type="button"
+                  onClick={() => toggle(i)}
+                  data-testid={`dua-imam-tick-${i + 1}`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-all tap-scale ${
+                    isLast ? "border" : ""
+                  }`}
+                  style={
+                    isLast
+                      ? {
+                          background: "linear-gradient(135deg, rgba(232,195,106,0.16) 0%, rgba(244,216,138,0.06) 100%)",
+                          borderColor: "rgba(232,195,106,0.45)",
+                        }
+                      : undefined
+                  }
+                >
+                  <span
+                    className="w-7 shrink-0 text-right text-[10px] tracking-widest"
+                    style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.4)" }}
+                  >
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span
+                    className={`flex-1 leading-snug ${
+                      isLast ? "font-display text-[14px]" : "text-[13px]"
+                    } ${ticked ? "line-through opacity-50" : ""}`}
+                    style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.92)" }}
+                  >
+                    {n}
+                  </span>
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all ${
+                      ticked ? "" : "border-ivory/30"
+                    }`}
+                    style={
+                      ticked
+                        ? { background: theme.accent, borderColor: theme.accent }
+                        : { background: "transparent" }
+                    }
+                    aria-hidden="true"
+                  >
+                    {ticked && <Check className="h-3 w-3 text-deep" strokeWidth={3} />}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+
+        {/* Footer */}
+        <div className="mt-3 flex items-center justify-between text-ivory/55">
+          <span className="text-[10px] italic">{data.english}</span>
+          <span
+            className="rounded-full bg-ivory/10 px-3 py-1 text-[10px] tracking-widest backdrop-blur-md"
+          >
+            {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DuaPairCard({ pair, index, total, onTapArabic }) {
   const theme = RAKAAT_THEMES[pair[0].rakaat] || RAKAAT_THEMES[1];
   const [a, b] = pair;
-  const insert = a.mid_insert || null;
+  const insert = a.mid_insert && a.mid_insert.kind === "verse" ? a.mid_insert : null;
 
   return (
     <section
@@ -188,7 +304,7 @@ function DuaPairCard({ pair, index, total, onTapArabic, onTapNames }) {
 
           {/* Mid insert (between the two duas) */}
           {insert ? (
-            <MidInsert insert={insert} accent={theme.accent} onTapNames={onTapNames} />
+            <MidInsert insert={insert} accent={theme.accent} />
           ) : (
             b && (
               <div className="my-5 flex items-center gap-3" aria-hidden="true">
@@ -231,7 +347,6 @@ export default function DuaPage() {
   const [credit, setCredit] = useState("");
   const [loading, setLoading] = useState(true);
   const [arabicOpen, setArabicOpen] = useState(null);
-  const [namesOpen, setNamesOpen] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [currentRakaat, setCurrentRakaat] = useState(1);
   const scrollerRef = useRef(null);
@@ -253,8 +368,8 @@ export default function DuaPage() {
     })();
   }, []);
 
-  // Pair items within rakaat: each card shows 2 duas (1 if odd-tail)
-  const pairs = useMemo(() => {
+  // Build slides: pairs of duas, plus dedicated interlude slides where requested
+  const slides = useMemo(() => {
     const byRakaat = new Map();
     items.forEach((d) => {
       const r = d.rakaat || 1;
@@ -266,8 +381,17 @@ export default function DuaPage() {
       .sort((a, b) => a - b)
       .forEach((r) => {
         const list = byRakaat.get(r);
-        for (let i = 0; i < list.length; i += 2) {
-          out.push([list[i], list[i + 1] || null]);
+        let i = 0;
+        while (i < list.length) {
+          const a = list[i];
+          const b = list[i + 1] || null;
+          out.push({ kind: "pair", rakaat: r, items: [a, b], anchorId: a.id });
+          if (a.interlude_after) {
+            out.push({ kind: "interlude", rakaat: r, data: a.interlude_after, anchorId: `${a.id}_after` });
+          } else if (b && b.interlude_after) {
+            out.push({ kind: "interlude", rakaat: r, data: b.interlude_after, anchorId: `${b.id}_after` });
+          }
+          i += 2;
         }
       });
     return out;
@@ -276,7 +400,7 @@ export default function DuaPage() {
   // Track current rakaat as user scrolls
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || pairs.length === 0) return;
+    if (!el || slides.length === 0) return;
     const cards = el.querySelectorAll("[data-rakaat]");
     const io = new IntersectionObserver(
       (entries) => {
@@ -291,17 +415,17 @@ export default function DuaPage() {
     );
     cards.forEach((c) => io.observe(c));
     return () => io.disconnect();
-  }, [pairs, currentRakaat]);
+  }, [slides, currentRakaat]);
 
   const rakaatGroups = useMemo(() => {
     const map = new Map();
-    pairs.forEach((pair) => {
-      const r = pair[0].rakaat || 1;
+    slides.forEach((s) => {
+      const r = s.rakaat;
       if (!map.has(r)) map.set(r, { rakaat: r, count: 0 });
-      map.get(r).count += pair[1] ? 2 : 1;
+      if (s.kind === "pair") map.get(r).count += s.items[1] ? 2 : 1;
     });
     return Array.from(map.values()).sort((a, b) => a.rakaat - b.rakaat);
-  }, [pairs]);
+  }, [slides]);
 
   const jumpToRakaat = (rakaat) => {
     const el = scrollerRef.current;
@@ -344,22 +468,37 @@ export default function DuaPage() {
       )}
 
       {/* Snap scroller */}
-      {!loading && pairs.length > 0 && (
+      {!loading && slides.length > 0 && (
         <div
           ref={scrollerRef}
           className="h-[100svh] w-full snap-y snap-mandatory overflow-y-scroll overscroll-y-contain"
           style={{ scrollBehavior: "smooth" }}
           data-testid="dua-scroller"
         >
-          {pairs.map((pair, idx) => {
-            const isFirstOfRakaat = idx === 0 || pairs[idx - 1][0].rakaat !== pair[0].rakaat;
+          {slides.map((slide, idx) => {
+            const isFirstOfRakaat = idx === 0 || slides[idx - 1].rakaat !== slide.rakaat;
+            const anchorProps = isFirstOfRakaat ? { "data-rakaat-anchor": slide.rakaat } : {};
             return (
               <div
-                key={pair[0].id}
-                data-rakaat={pair[0].rakaat}
-                {...(isFirstOfRakaat ? { "data-rakaat-anchor": pair[0].rakaat } : {})}
+                key={slide.anchorId}
+                data-rakaat={slide.rakaat}
+                {...anchorProps}
               >
-                <DuaPairCard pair={pair} index={idx} total={pairs.length} onTapArabic={setArabicOpen} onTapNames={setNamesOpen} />
+                {slide.kind === "pair" ? (
+                  <DuaPairCard
+                    pair={slide.items}
+                    index={idx}
+                    total={slides.length}
+                    onTapArabic={setArabicOpen}
+                  />
+                ) : (
+                  <ImamListInterlude
+                    data={slide.data}
+                    index={idx}
+                    total={slides.length}
+                    rakaat={slide.rakaat}
+                  />
+                )}
               </div>
             );
           })}
@@ -412,7 +551,7 @@ export default function DuaPage() {
       )}
 
       {/* Floating filter */}
-      {!loading && pairs.length > 0 && (
+      {!loading && slides.length > 0 && (
         <button
           type="button"
           onClick={() => setFilterOpen(true)}
@@ -535,84 +674,6 @@ export default function DuaPage() {
         </div>
       )}
 
-      {/* Tasbih of Imams modal */}
-      {namesOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-md"
-          onClick={() => setNamesOpen(null)}
-          data-testid="dua-names-modal"
-        >
-          <div
-            className="flex max-h-[90vh] w-full max-w-[480px] flex-col rounded-t-[28px] border-t border-ivory/15 text-ivory shadow-2xl"
-            style={{
-              background:
-                "linear-gradient(160deg, rgba(15,61,54,0.98) 0%, rgba(10,40,32,0.98) 100%)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 pt-5">
-              <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-ivory/20" />
-              <p className="text-[10px] uppercase tracking-[0.22em] text-[#E8C36A]">
-                {namesOpen.title}
-              </p>
-              <p className="mt-1 font-display text-lg leading-snug">
-                {namesOpen.subtitle}
-              </p>
-              <p className="mt-2 text-[12px] text-ivory/65 leading-relaxed">
-                {namesOpen.english}
-              </p>
-            </div>
-            <div className="mt-4 flex-1 overflow-y-auto px-6 pb-5">
-              <ol className="space-y-1.5" data-testid="dua-names-list">
-                {(namesOpen.names || []).map((n, i) => {
-                  const isLast = i === (namesOpen.names.length - 1);
-                  return (
-                    <li
-                      key={`${n}-${i}`}
-                      data-testid={`dua-name-${i + 1}`}
-                      className={`flex items-baseline gap-3 rounded-xl px-3 py-2 ${isLast ? "border" : ""}`}
-                      style={
-                        isLast
-                          ? {
-                              background: "linear-gradient(135deg, rgba(232,195,106,0.18) 0%, rgba(244,216,138,0.08) 100%)",
-                              borderColor: "rgba(232,195,106,0.55)",
-                            }
-                          : undefined
-                      }
-                    >
-                      <span
-                        className="w-7 shrink-0 text-right text-[10px] tracking-widest"
-                        style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.4)" }}
-                      >
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                      <span
-                        className={`flex-1 leading-snug ${isLast ? "font-display text-[15px]" : "text-[13px]"}`}
-                        style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.92)" }}
-                      >
-                        {n}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
-              <p className="mt-5 text-[10px] text-ivory/45 text-center italic leading-relaxed">
-                Forty-nine Imams of the line of Mawlana 'Aly — each a quiet light passed gently to the next.
-              </p>
-            </div>
-            <div className="border-t border-ivory/10 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setNamesOpen(null)}
-                data-testid="dua-names-close"
-                className="inline-flex w-full items-center justify-center rounded-full border border-ivory/20 bg-ivory/10 px-5 py-3 text-sm font-medium text-ivory tap-scale"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

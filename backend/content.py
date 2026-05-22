@@ -976,12 +976,14 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma bi haqqi Mawlānā 'Aly",
         "english": "O Allah, in the name of our Lord Aly.",
         "arabic": "اللَّهُمَّ بِحَقِّ مَوْلَانَا عَلِيٍّ",
-        "mid_insert": {
+        "interlude_after": {
             "kind": "imam_list",
+            "id": "tasbih_imams",
             "title": "Tasbih of the Imams",
-            "subtitle": "From Mawlana Husayn to Noor Mawlana Shah Rahim al-Husayni",
-            "english": "Whisper each name softly — the chain of light that holds us today.",
+            "subtitle": "From Mawlana 'Aly to Noor Mawlana Shah Rahim al-Husayni",
+            "english": "Fifty names — the unbroken chain of light, from the first to the present.",
             "names": [
+                "Mawlana 'Aly",
                 "Mawlana Husayn",
                 "Mawlana Zain al-Abidin",
                 "Mawlana Muhammad al-Baqir",
