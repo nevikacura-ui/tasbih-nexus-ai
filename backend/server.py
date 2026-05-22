@@ -106,6 +106,7 @@ class NoorChatRequest(BaseModel):
 class NoorChatResponse(BaseModel):
     session_id: str
     reply: str
+    suggested_dua: Optional[dict] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -863,7 +864,29 @@ NOOR_SYSTEM_PROMPT = (
     "- If the user is distressed: slow down, validate, offer one breath, one reflective question.\n"
     "- End most replies with ONE small invitation — a phrase to whisper, a moment to notice, a tiny kindness.\n"
     "- Keep replies under 140 words unless the user asks for more.\n"
-    "- Never claim authority. If unsure, say so warmly."
+    "- Never claim authority. If unsure, say so warmly.\n\n"
+    "Holy Du'a — gentle verse suggestions (use sparingly):\n"
+    "After your reflective reply, if (and only if) ONE specific verse from the Holy Du'a would land "
+    "softly with what the user shared, append on a NEW LINE the marker [DUA:<id>] using exactly one "
+    "of the ids below. The app will render this marker as a small 'Sit with this verse' card under "
+    "your message. If nothing feels right, omit the marker — never force it.\n"
+    "Catalogue (id · theme):\n"
+    "- r1_01_bismillah · beginning anything, mercy, soft start\n"
+    "- r1_05_iyyaka · surrender, asking for help, devotion\n"
+    "- r1_06_ihdina · seeking guidance, feeling lost, direction\n"
+    "- r1_10_tawakkal · trust, reliance on the Divine, letting go of control\n"
+    "- r1_11_quwwati · weakness, exhaustion, asking for strength\n"
+    "- r1_13_ya_rabb · longing, calling out to the Lord, intimacy\n"
+    "- r1_20_shah_rahim · love for the Imam-of-the-Time, devotion to wilayah\n"
+    "- r2_07_anta_salaam · peace, anxiety, restlessness, the Source of Salaam\n"
+    "- r4_10_allahummaghfir · regret, forgiveness, starting over\n"
+    "- r5_05_talamoon · feeling unseen, the comfort of being known by the Divine\n"
+    "- r5_07_sahhil · hardship, a heavy task, asking for ease\n"
+    "- r5_11_anta_quwwati · burnout, leaning on the Divine for strength\n"
+    "- r5_13_tikali · trust, surrender of outcomes, reliance\n"
+    "- r6_02_qul_huwallah · clarity of heart, refuge in the One, simplicity\n"
+    "- r6_13_irhamna · seeking mercy from the Imam, gentleness on oneself\n"
+    "Format strictly: `[DUA:r1_06_ihdina]` on its own line at the end. No extra words around it."
 )
 
 
@@ -2887,6 +2910,96 @@ async def get_dua(dua_id: str):
         if d.get("id") == dua_id:
             return d
     raise HTTPException(status_code=404, detail="Dua not found")
+
+
+# ── Audio progress (Pick up where you left off) ──────────────────────────────
+class DuaProgressBody(BaseModel):
+    voice: str = "male"
+    position_ms: int = 0
+    duration_ms: int = 0
+
+
+@api.get("/dua/progress")
+async def get_dua_progress(user: User = Depends(current_user)):
+    """Return the user's last audio position so they can resume the Du'a."""
+    doc = await db.dua_progress.find_one({"user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        return {"position_ms": 0, "voice": "male", "duration_ms": 0, "updated_at": None}
+    return {
+        "position_ms": int(doc.get("position_ms", 0)),
+        "voice": doc.get("voice", "male"),
+        "duration_ms": int(doc.get("duration_ms", 0)),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
+@api.post("/dua/progress")
+async def save_dua_progress(body: DuaProgressBody, user: User = Depends(current_user)):
+    """Persist the user's audio playback position for resume-from-where-left-off."""
+    voice = body.voice if body.voice in ("male", "female") else "male"
+    pos = max(0, int(body.position_ms or 0))
+    dur = max(0, int(body.duration_ms or 0))
+    await db.dua_progress.update_one(
+        {"user_id": user.user_id},
+        {"$set": {
+            "user_id": user.user_id,
+            "voice": voice,
+            "position_ms": pos,
+            "duration_ms": dur,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "position_ms": pos, "voice": voice}
+
+
+# ── Verse bookmarks ──────────────────────────────────────────────────────────
+class BookmarkBody(BaseModel):
+    dua_id: str
+
+
+@api.get("/dua/bookmarks")
+async def list_dua_bookmarks(user: User = Depends(current_user)):
+    """Return the user's bookmarked verse ids (most recent first)."""
+    docs = await db.dua_bookmarks.find(
+        {"user_id": user.user_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(length=500)
+    by_id = {d["id"]: d for d in DUA}
+    items = []
+    for b in docs:
+        d = by_id.get(b.get("dua_id"))
+        if d:
+            items.append({
+                "dua_id": b["dua_id"],
+                "title": d.get("title"),
+                "transliteration": d.get("transliteration"),
+                "english": d.get("english"),
+                "rakaat": d.get("rakaat"),
+                "created_at": b.get("created_at"),
+            })
+    return {"bookmarks": items, "ids": [b["dua_id"] for b in docs]}
+
+
+@api.post("/dua/bookmarks")
+async def add_dua_bookmark(body: BookmarkBody, user: User = Depends(current_user)):
+    if not any(d.get("id") == body.dua_id for d in DUA):
+        raise HTTPException(status_code=404, detail="Dua not found")
+    await db.dua_bookmarks.update_one(
+        {"user_id": user.user_id, "dua_id": body.dua_id},
+        {"$set": {
+            "user_id": user.user_id,
+            "dua_id": body.dua_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return {"ok": True, "dua_id": body.dua_id}
+
+
+@api.delete("/dua/bookmarks/{dua_id}")
+async def delete_dua_bookmark(dua_id: str, user: User = Depends(current_user)):
+    res = await db.dua_bookmarks.delete_one({"user_id": user.user_id, "dua_id": dua_id})
+    return {"ok": True, "deleted": res.deleted_count}
 
 
 # ── ElevenLabs · Authentic Arabic recitation for Dua + Tasbih ─────────
