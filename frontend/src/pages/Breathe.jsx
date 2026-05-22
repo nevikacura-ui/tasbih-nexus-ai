@@ -1,8 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Pause, Play } from "lucide-react";
+import { ArrowLeft, Pause, Play, MapPin } from "lucide-react";
 import { NoorBackdrop } from "../components/NoorBackdrop";
-import { nextPrayer, formatGap } from "../lib/prayerTimes";
+import {
+  nextPrayer,
+  formatGap,
+  getCachedLocation,
+  saveLocation,
+  requestGeolocation,
+  fetchNearestCity,
+} from "../lib/prayerTimes";
 
 // 4-4-4-4 box-breathing cycle (16 s) — gentle and beginner-friendly.
 const CYCLE = [
@@ -18,8 +25,25 @@ export default function BreathePage() {
   const [running, setRunning] = useState(true);
   const [elapsed, setElapsed] = useState(0); // seconds into the current cycle
   const [cycles, setCycles] = useState(0);
+  const [location, setLocation] = useState(() => getCachedLocation());
+  const [locBusy, setLocBusy] = useState(false);
   const startRef = useRef(performance.now());
   const baseRef = useRef(0); // accumulated seconds at last pause
+
+  const useMyLocation = async () => {
+    setLocBusy(true);
+    const coords = await requestGeolocation();
+    if (!coords) {
+      setLocBusy(false);
+      return;
+    }
+    const city = await fetchNearestCity(coords.lat, coords.lng);
+    const next = { ...coords, label: city?.city || null };
+    saveLocation(next);
+    setLocation(next);
+    setNow(new Date()); // force prayer-times recompute
+    setLocBusy(false);
+  };
 
   // 1s tick for clock + countdown
   useEffect(() => {
@@ -110,6 +134,34 @@ export default function BreathePage() {
           <p className="mt-1 text-sm text-deep/65">
             {next.note} · in <span data-testid="breathe-gap" className="font-medium text-deep">{gap}</span>
           </p>
+
+          {/* Location chip — shows current source (default vs my city) + CTA */}
+          <div className="mt-3 flex items-center justify-center">
+            {location ? (
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={locBusy}
+                data-testid="breathe-location-chip"
+                className="glass inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-medium text-deep/70 shadow-soft tap-scale disabled:opacity-60"
+                title="Refresh location"
+              >
+                <MapPin className="h-3 w-3 text-emerald-700" />
+                {locBusy ? "Updating…" : (location.label ? `Times for ${location.label}` : "Times for your location")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={useMyLocation}
+                disabled={locBusy}
+                data-testid="breathe-use-location"
+                className="bg-emerald-gradient text-ivory shadow-soft inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[11px] font-medium tap-scale disabled:opacity-60"
+              >
+                <MapPin className="h-3 w-3" />
+                {locBusy ? "Locating…" : "Use my location for accurate times"}
+              </button>
+            )}
+          </div>
         </section>
 
         {/* Breathing ring — fills the visual centre */}

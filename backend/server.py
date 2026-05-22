@@ -176,6 +176,9 @@ class NoorChatResponse(BaseModel):
     session_id: str
     reply: str
     suggested_dua: Optional[dict] = None
+    used_today: int = 0
+    daily_limit: int = 3
+    remaining_today: int = 3
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1054,7 +1057,30 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
         "language": lang_key,
         "created_at": datetime.now(timezone.utc),
     })
-    return NoorChatResponse(session_id=session_id, reply=clean_reply, suggested_dua=suggested_dua)
+    return NoorChatResponse(
+        session_id=session_id,
+        reply=clean_reply,
+        suggested_dua=suggested_dua,
+        used_today=count_today + 1,
+        daily_limit=NOOR_DAILY_LIMIT,
+        remaining_today=max(0, NOOR_DAILY_LIMIT - (count_today + 1)),
+    )
+
+
+@api.get("/noor/usage")
+async def noor_usage(user: User = Depends(current_user)):
+    """How many Noor reflections this user has used today (counts user-role messages)."""
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    used = await db.noor_messages.count_documents({
+        "user_id": user.user_id,
+        "role": "user",
+        "day": today_iso,
+    })
+    return {
+        "used_today": used,
+        "daily_limit": NOOR_DAILY_LIMIT,
+        "remaining_today": max(0, NOOR_DAILY_LIMIT - used),
+    }
 
 
 @api.get("/noor/history/{session_id}")

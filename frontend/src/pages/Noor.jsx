@@ -25,7 +25,12 @@ export default function NoorPage() {
   const [messages, setMessages] = useState([
     { role: "noor", text: "As-salāmu ʿalaykum. Take a slow breath with me. What is sitting on your heart this evening?" },
   ]);
+  const [usage, setUsage] = useState({ used_today: 0, daily_limit: 3, remaining_today: 3 });
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    api.get("/noor/usage").then((r) => setUsage(r.data)).catch(() => {});
+  }, []);
 
   useEffect(() => { try { localStorage.setItem("noor_lang", language); } catch (_) {} }, [language]);
   useEffect(() => {
@@ -41,6 +46,13 @@ export default function NoorPage() {
     try {
       const r = await api.post("/noor/chat", { message: text, session_id: sessionId });
       setSessionId(r.data.session_id);
+      if (typeof r.data.used_today === "number") {
+        setUsage({
+          used_today: r.data.used_today,
+          daily_limit: r.data.daily_limit ?? 3,
+          remaining_today: r.data.remaining_today ?? 0,
+        });
+      }
       const suggested = r.data.suggested_dua || null;
       // Stream the reply word-by-word for a calm typing effect
       const full = r.data.reply || "";
@@ -197,6 +209,23 @@ export default function NoorPage() {
       </section>
 
       <div className="fixed bottom-0 left-1/2 w-full max-w-[480px] -translate-x-1/2 bg-gradient-to-t from-ivory via-ivory/95 to-transparent px-5 pb-6 pt-3">
+        {/* Tiny daily-quota chip — sits flush above the input */}
+        <div className="mb-2 flex items-center justify-end">
+          <span
+            data-testid="noor-quota"
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium tap-scale ${
+              usage.remaining_today === 0
+                ? "bg-deep/10 text-deep/55"
+                : "glass text-deep/70 shadow-soft"
+            }`}
+            title={`${usage.used_today} of ${usage.daily_limit} Noor reflections used today`}
+          >
+            <Sparkles className={`h-3 w-3 ${usage.remaining_today === 0 ? "text-deep/40" : "text-gold"}`} />
+            <span data-testid="noor-quota-text">
+              {usage.used_today} / {usage.daily_limit} reflections today
+            </span>
+          </span>
+        </div>
         <div className="glass shadow-elegant flex items-end gap-2 rounded-3xl p-2">
           <textarea
             data-testid="noor-input"
@@ -209,13 +238,18 @@ export default function NoorPage() {
               }
             }}
             rows={1}
-            placeholder="Share a thought with Noor…"
-            className="flex-1 resize-none bg-transparent px-3 py-2 text-sm text-deep outline-none placeholder:text-deep/40"
+            placeholder={
+              usage.remaining_today === 0
+                ? "You've used today's reflections — return tomorrow."
+                : "Share a thought with Noor…"
+            }
+            disabled={usage.remaining_today === 0}
+            className="flex-1 resize-none bg-transparent px-3 py-2 text-sm text-deep outline-none placeholder:text-deep/40 disabled:opacity-60"
           />
           <button
             data-testid="noor-send"
             onClick={() => send()}
-            disabled={busy}
+            disabled={busy || usage.remaining_today === 0}
             className="bg-emerald-gradient text-ivory shadow-glow flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:opacity-50"
             aria-label="Send"
           >

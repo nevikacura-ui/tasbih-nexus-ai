@@ -27,6 +27,24 @@ The experience should feel:
 - **Family / parent** — uses family circles, parenting resources (future)
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
+## Features — Per-city prayer times + Noor daily counter (Feb, 2026)
+
+### Per-city prayer times (real astronomical computation)
+- Added `adhan@4.4.3` (BSD-2, ~30 KB, zero network). Calculations stay 100 % client-side.
+- `/app/frontend/src/lib/prayerTimes.js` rewritten as a graceful fallback chain:
+  1. If `localStorage.tasbih_user_location` has cached lat/lng → compute today's 5 prayer times for that location (Karachi method, Hanafi madhab — best default for our seeded SA/EA cities).
+  2. Else → fall back to the friendly seeded defaults (Fajr 05:30, Dhuhr 13:00, Asr 16:30, Maghrib 18:45, Isha 20:30) that match the backend reminder seed.
+- New helpers: `requestGeolocation()`, `fetchNearestCity(lat,lng)` (calls `GET /api/jamatkhanas/nearby` to label the user's city), `saveLocation()`, `getCachedLocation()`, `computePrayerTimesForLocation()`.
+- `/breathe` page now shows a CTA: **"Use my location for accurate times"** when no coords cached, or a glass chip **"Times for Mumbai"** (city label resolved from nearest seeded JK) once granted. Coords + label persist in `localStorage`.
+- Home "Next moment" card and `/breathe` both honour the same cached coords automatically — no extra plumbing needed on Home.
+- Verified live: injecting `{lat: 19.0760, lng: 72.8777, label: 'Mumbai'}` flips the Fajr countdown from default `7h 02m` → real Mumbai `43m`.
+
+### Noor "3 / 3 reflections today" counter
+- Backend: new `GET /api/noor/usage` → `{used_today, daily_limit, remaining_today}`. `POST /api/noor/chat` response also now carries the same three fields so the UI can update without a refetch.
+- Frontend: `/app/frontend/src/pages/Noor.jsx` fetches usage on mount, shows a glass chip above the input — *"0 / 3 reflections today"* with a gold sparkle. Chip dims and input + send button disable once `remaining_today === 0`, with a kind placeholder asking the user to return tomorrow.
+- Verified live: chip renders correctly on initial page load via guest session.
+
+
 ## Feature — Breathe with the ring (Feb, 2026)
 - The Home "Next moment" card is now a real entry point: it shows the **dynamically computed next prayer** (Fajr / Dhuhr / Asr / Maghrib / Isha) and a live countdown.
 - Tapping the card opens a new `/breathe` page (`/app/frontend/src/pages/Breathe.jsx`) — a calm full-screen breathing companion with:
