@@ -1511,7 +1511,8 @@ function DuaPageInner() {
             onClick={toggleAutoPlay}
             data-testid="dua-play-all"
             aria-pressed={isAutoPlaying}
-            aria-label={isAutoPlaying ? "Pause auto recitation" : "Play full Du'a"}
+            aria-label={isAutoPlaying ? "Pause the complete Du'a" : "Play the complete Du'a from the start"}
+            title={isAutoPlaying ? "Pause" : "Play the complete Du'a"}
             className="flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md transition-all tap-scale"
             style={{
               background: isAutoPlaying ? activeTheme.accent : `${activeTheme.accent}22`,
@@ -1522,7 +1523,7 @@ function DuaPageInner() {
             }}
           >
             {isAutoPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-            {isAutoPlaying ? "Pause" : "Play"}
+            {isAutoPlaying ? "Pause" : "Play all"}
           </button>
           <button
             type="button"
@@ -1536,8 +1537,8 @@ function DuaPageInner() {
             }}
             data-testid="dua-auto-advance"
             aria-pressed={autoAdvance}
-            aria-label={autoAdvance ? "Disable auto chain" : "Enable auto chain"}
-            title={autoAdvance ? "Chain on — each verse flows to the next" : "Chain off — verses play one at a time"}
+            aria-label={autoAdvance ? "Continuous flow on — verses flow into each other" : "Single mode — one verse at a time"}
+            title={autoAdvance ? "Flow on — each verse flows into the next" : "Single — one verse at a time"}
             className="flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md transition-all tap-scale"
             style={{
               background: autoAdvance ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.25)",
@@ -1546,7 +1547,7 @@ function DuaPageInner() {
             }}
           >
             <Repeat className="h-3.5 w-3.5" />
-            {autoAdvance ? "Auto" : "Manual"}
+            {autoAdvance ? "Flow" : "Single"}
           </button>
           <div
             className="rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md"

@@ -3275,7 +3275,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 9:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 10:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3361,7 +3361,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 9,
+            "schema": 10,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,

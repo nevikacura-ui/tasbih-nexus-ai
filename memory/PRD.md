@@ -66,11 +66,12 @@ The experience should feel:
 
 ### Final pre-launch content tweaks (May 23, 2026)
 - New verse `r5_17_sujoodi` ("My Prostration" / "Allāhumma laka sujoodī wa tā-ʿatī") added as the **last card of Rakaat 5**, before Rakaat 6 opens. Recited in master MP3 at ~3:35.
-- Existing same-text mid_insert inside r6_14 kept (verse appears twice per user's authoritative tradition).
+- ~~Existing same-text mid_insert inside r6_14 kept~~ → **mid_insert removed** from r6_14 to avoid the duplicate "My Prostration" card showing both in R5 and in R6 (user verified the correct position is end of Rakaat 5 only).
 - r6_11 verse stripped to `Allāhumma bi haqqi` ("O Allah, by the right of —") so the 50-name Tasbih grammatically completes the phrase without repeating "Mawlānā ʿAly".
 - Imam name #49 changed: `Noor Mawlana Shah Karim al-Husayni` → `Mawlana Shah Karim Shah`.
 - Imam name #50 removed (was `Noor Mawlana Shah Rahim al-Husayni`). Total Imam names now **49**.
-- Cache schema bumped 8 → 9; both voices rebuilt (male 5.48 MB / 342s / 162 segments, female 6.09 MB / 380s / 162 segments).
+- Cache schema bumped 9 → 10; both voices rebuilt (male 5.44 MB / 339.7s / 161 segments, female 6.04 MB / 377.4s / 161 segments).
+- UI rename: **"Auto" → "Flow"**, **"Manual" → "Single"**, **"Play" → "Play all"** so new + returning users immediately understand the controls (Play all = complete Du'a; Flow = one verse chains to the next; Single = pause after each).
 
 - **Share Tasbih button** (`/app/frontend/src/components/ShareTasbihButton.jsx`) opens the OS share sheet (mobile) or WhatsApp Web (desktop) with a premium pre-filled message that rotates daily. Three message variants currently: "A small gift for you", "Yā ʿAlī madad 🌙 found a quiet space…", and "I think you'll feel this one".
 - Drop-in surfaces: Home page bottom (next to Install app), Du'a completion modal.
