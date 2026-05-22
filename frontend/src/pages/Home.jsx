@@ -341,6 +341,24 @@ export default function HomePage() {
             ))}
           </div>
         </section>
+
+        {/* Quiet credit — a small thank-you to the curators */}
+        <section className="mt-10 px-5 pb-2" data-testid="home-credit-section">
+          <div className="mx-auto max-w-xs text-center">
+            <div className="mx-auto h-px w-12 bg-gradient-to-r from-transparent via-deep/20 to-transparent" />
+            <p className="mt-4 text-[10px] uppercase tracking-[0.28em] text-deep/40">
+              Curated with care
+            </p>
+            <p
+              className="mt-2 text-[11px] leading-relaxed text-deep/55"
+              data-testid="home-credit"
+            >
+              <strong className="text-deep/70">Naushad &amp; Shabnam Patel</strong>
+              <br />
+              Andheri Jamatkhana · Mumbai · India
+            </p>
+          </div>
+        </section>
       </div>
     </MobileShell>
   );
