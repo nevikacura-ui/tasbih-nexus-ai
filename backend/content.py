@@ -303,6 +303,7 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
         "english": "O Allah, to You is my prostration and obedience. (recited four times)",
         "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        "repeat": 4,
     },
 
     # ── Rakaat 2 ─────────────────────────────────────────────────────
@@ -489,6 +490,7 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
         "english": "O Allah, to You is my prostration and obedience.",
         "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        "repeat": 4,
     },
 
     # ── Rakaat 3 ─────────────────────────────────────────────────────
@@ -619,6 +621,7 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
         "english": "O Allah, to You is my prostration and obedience.",
         "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        "repeat": 4,
     },
 
     # ── Rakaat 4 ─────────────────────────────────────────────────────
@@ -749,6 +752,7 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
         "english": "O Allah, to You is my prostration and obedience.",
         "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        "repeat": 4,
     },
 
     # ── Rakaat 5 ─────────────────────────────────────────────────────
@@ -1098,6 +1102,7 @@ DUA: list[dict] = [
         "transliteration": "Allāhumma laka sujoodī wa tā-'atī",
         "english": "O Allah, to You is my prostration and obedience.",
         "arabic": "اللَّهُمَّ لَكَ سُجُودِي وَطَاعَتِي",
+        "repeat": 4,
     },
 ]
 

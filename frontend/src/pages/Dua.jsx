@@ -584,6 +584,9 @@ export default function DuaPage() {
   const slidesRef = useRef([]);
 
   // ── Audio playback ─────────────────────────────────────────────
+  const [fullTimeline, setFullTimeline] = useState(null); // [{id, kind, slide_idx, start_ms, end_ms, ...}]
+  const [fullSegIdx, setFullSegIdx] = useState(-1);
+
   const stopAudio = useCallback(() => {
     const el = audioRef.current;
     if (el) {
@@ -592,6 +595,7 @@ export default function DuaPage() {
     setPlayingId(null);
     setLoadingId(null);
     setAudioProgress(0);
+    setFullSegIdx(-1);
   }, []);
 
   // Cleanup on unmount
@@ -645,37 +649,99 @@ export default function DuaPage() {
     el.play().catch((e) => { setLoadingId(null); setPlayingId(null); setAudioProgress(0); console.warn("audio play failed", e); });
   }, [playingId, stopAudio, scrollToNext, voice]);
 
-  // Master Play All: when the visible slide changes AND auto-play is active AND nothing is currently playing → trigger the right thing
-  useEffect(() => {
-    if (!isAutoPlaying) return;
-    if (playingId || loadingId) return;
-    const slide = slidesRef.current[currentSlideIdx];
-    if (!slide) return;
-    if (slide.kind === "pair") {
-      // Small delay so the snap-scroll lands cleanly first
-      const t = setTimeout(() => { playDua(slide.items[0]); }, 500);
-      return () => clearTimeout(t);
-    }
-    // interlude — handled inside ImamListInterlude via prop
-  }, [currentSlideIdx, isAutoPlaying, playingId, loadingId, playDua]);
+  // Master Play All: per-slide auto-trigger is intentionally disabled here.
+  // The single-MP3 mode (built in `toggleAutoPlay`) handles all slide chaining
+  // by listening to the audio's timeupdate event and scrolling cards in sync
+  // with the precomputed timeline.
 
-  // Toggle master Play All
-  const toggleAutoPlay = useCallback(() => {
+  // Reset timeline cache when voice changes (different MP3, different timestamps)
+  useEffect(() => { setFullTimeline(null); }, [voice]);
+
+  // Toggle master Play All — streams the entire Du'a as ONE MP3 (with repeats baked in)
+  const toggleAutoPlay = useCallback(async () => {
+    const el = audioRef.current;
+    if (!el) return;
     if (isAutoPlaying) {
-      // Pause everything
+      try { el.pause(); } catch (e) { /* ignore */ }
       setIsAutoPlaying(false);
-      stopAudio();
+      setPlayingId(null);
+      setLoadingId(null);
+      setAudioProgress(0);
+      setFullSegIdx(-1);
       return;
     }
+    // Start the single-MP3 stream
     setIsAutoPlaying(true);
-    // Kick off the current slide immediately (the effect above handles transitions on scroll, but the first one needs a manual nudge)
-    const slide = slidesRef.current[currentSlideIdx];
-    if (!slide) return;
-    if (slide.kind === "pair") {
-      setTimeout(() => { playDua(slide.items[0]); }, 200);
+    setLoadingId("__full__");
+    try {
+      // Fetch timeline (small JSON) first so we can sync scroll
+      let tl = fullTimeline;
+      if (!tl || tl.length === 0) {
+        const r = await fetch(`${API_BASE}/api/full-dua/timeline?voice=${voice}`);
+        const j = await r.json();
+        tl = j.segments || [];
+        setFullTimeline(tl);
+      }
+      el.pause();
+      el.src = `${API_BASE}/api/full-dua/audio?voice=${voice}`;
+      el.onended = () => {
+        setIsAutoPlaying(false);
+        setPlayingId(null);
+        setLoadingId(null);
+        setAudioProgress(0);
+        setFullSegIdx(-1);
+      };
+      el.onerror = () => {
+        setIsAutoPlaying(false);
+        setPlayingId(null);
+        setLoadingId(null);
+      };
+      el.onplaying = () => { setLoadingId(null); };
+      el.ontimeupdate = () => {
+        if (!el.duration || !isFinite(el.duration)) return;
+        setAudioProgress(Math.min(1, el.currentTime / el.duration));
+        const cur_ms = el.currentTime * 1000;
+        // Binary-ish search for current segment
+        const segs = tl;
+        let lo = 0, hi = segs.length - 1, hit = -1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const s = segs[mid];
+          if (cur_ms < s.start_ms) hi = mid - 1;
+          else if (cur_ms >= s.end_ms) lo = mid + 1;
+          else { hit = mid; break; }
+        }
+        if (hit < 0) return;
+        setFullSegIdx((prev) => (prev === hit ? prev : hit));
+        const seg = segs[hit];
+        // Update the "currently glowing" verse id (for the play button visual)
+        if (seg.kind === "verse") {
+          setPlayingId((prev) => (prev === seg.id ? prev : seg.id));
+        } else {
+          setPlayingId(null);
+        }
+        // Scroll to the right slide when slide_idx changes
+        if (typeof seg.slide_idx === "number") {
+          setCurrentSlideIdx((prev) => {
+            if (prev !== seg.slide_idx) {
+              const sc = scrollerRef.current;
+              if (sc) {
+                const node = sc.querySelector(`[data-slide-idx="${seg.slide_idx}"]`);
+                if (node) node.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+              return seg.slide_idx;
+            }
+            return prev;
+          });
+        }
+      };
+      await el.play();
+    } catch (e) {
+      console.warn("full Du'a play failed", e);
+      setIsAutoPlaying(false);
+      setLoadingId(null);
     }
-    // For interlude, the prop autoPlayActive will trigger the component's reciteAll
-  }, [isAutoPlaying, currentSlideIdx, playDua, stopAudio]);
+  }, [isAutoPlaying, voice, fullTimeline]);
 
   // Build slides: pairs of duas, plus dedicated interlude slides where requested.
   // A dua with `interlude_after` becomes a solo card and the interlude follows it.
@@ -776,7 +842,13 @@ export default function DuaPage() {
           >
             <button
               type="button"
-              onClick={() => { if (voice !== "male") { stopAudio(); setVoice("male"); } }}
+              onClick={() => {
+                if (voice !== "male") {
+                  stopAudio();
+                  setIsAutoPlaying(false);
+                  setVoice("male");
+                }
+              }}
               data-testid="dua-voice-male"
               aria-pressed={voice === "male"}
               className="flex h-full items-center px-3 text-[10px] uppercase tracking-[0.18em] tap-scale"
@@ -791,7 +863,13 @@ export default function DuaPage() {
             <span className="h-5 w-px" style={{ background: `${activeTheme.accent}33` }} aria-hidden="true" />
             <button
               type="button"
-              onClick={() => { if (voice !== "female") { stopAudio(); setVoice("female"); } }}
+              onClick={() => {
+                if (voice !== "female") {
+                  stopAudio();
+                  setIsAutoPlaying(false);
+                  setVoice("female");
+                }
+              }}
               data-testid="dua-voice-female"
               aria-pressed={voice === "female"}
               className="flex h-full items-center px-3 text-[10px] uppercase tracking-[0.18em] tap-scale"

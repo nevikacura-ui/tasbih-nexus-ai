@@ -2961,6 +2961,165 @@ async def get_tasbih_name_audio(
     )
 
 
+# ── Whole-Du'a single-MP3 (with repeats baked in) ─────────────────────
+def _build_full_playlist() -> list[dict]:
+    """Compute the linear playlist for the entire Holy Du'a.
+
+    Each entry is one chunk of MP3 audio. The order mirrors the Dua page slides
+    (rakaat 1..6) and includes repeats per the `repeat` field on each verse.
+    Tasbih of the 50 Imams is included as its own segment after Mawlana 'Aly.
+    """
+    plan = []  # list of {kind: "verse"|"name", payload, slide_idx (frontend), repeat}
+    sorted_dua = sorted(DUA, key=lambda d: (d.get("rakaat", 0), d.get("order", 0)))
+
+    # Group by rakaat, build slides identical to frontend's logic.
+    from collections import defaultdict
+    by_rakaat = defaultdict(list)
+    for d in sorted_dua:
+        by_rakaat[d.get("rakaat", 0)].append(d)
+
+    slide_idx = -1
+    for r in sorted(by_rakaat.keys()):
+        lst = by_rakaat[r]
+        i = 0
+        while i < len(lst):
+            a = lst[i]
+            if a.get("interlude_after"):
+                # Solo card with the dua → then the interlude card
+                slide_idx += 1
+                plan.append({
+                    "kind": "verse", "dua": a, "slide_idx": slide_idx,
+                    "repeat": int(a.get("repeat", 1)),
+                })
+                # Interlude card
+                slide_idx += 1
+                for name in a["interlude_after"].get("names", []):
+                    plan.append({
+                        "kind": "name", "name": name, "slide_idx": slide_idx,
+                        "repeat": 1,
+                    })
+                i += 1
+            else:
+                b = lst[i + 1] if i + 1 < len(lst) else None
+                slide_idx += 1
+                plan.append({
+                    "kind": "verse", "dua": a, "slide_idx": slide_idx,
+                    "repeat": int(a.get("repeat", 1)),
+                })
+                if b:
+                    plan.append({
+                        "kind": "verse", "dua": b, "slide_idx": slide_idx,
+                        "repeat": int(b.get("repeat", 1)),
+                    })
+                i += 2
+    return plan
+
+
+def _mp3_duration_ms(mp3_bytes: bytes) -> int:
+    """Best-effort duration from an MP3 blob, in milliseconds."""
+    try:
+        import io
+        from mutagen.mp3 import MP3
+        m = MP3(io.BytesIO(mp3_bytes))
+        return int((m.info.length or 0) * 1000)
+    except Exception:
+        # Fallback: assume 128 kbps CBR
+        return int(len(mp3_bytes) * 8 / 128000 * 1000)
+
+
+async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
+    """Assemble the whole Du'a as one concatenated MP3 + a timeline JSON.
+
+    Cached as a single document in `dua_full_audio_cache` keyed by voice.
+    Returns (mp3_bytes, timeline).
+    """
+    cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
+    if cached and cached.get("audio") and cached.get("timeline"):
+        return cached["audio"], cached["timeline"]
+
+    voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
+    plan = _build_full_playlist()
+    chunks = []
+    timeline = []
+    cur_ms = 0
+    import hashlib
+
+    for entry in plan:
+        if entry["kind"] == "verse":
+            d = entry["dua"]
+            text = d.get("arabic") or ""
+            cache_key = f"dua:{voice_key}:{d['id']}"
+            seg_id = d["id"]
+        else:
+            text = entry["name"]
+            cache_key = f"imam:{voice_key}:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+            seg_id = f"imam:{text}"
+
+        # Get or synthesize the segment MP3
+        seg = await _synthesize_arabic_mp3(cache_key, text, voice_id)
+        seg_ms = _mp3_duration_ms(seg)
+        repeat = max(1, int(entry.get("repeat", 1)))
+
+        for r in range(repeat):
+            chunks.append(seg)
+            timeline.append({
+                "id": seg_id,
+                "kind": entry["kind"],
+                "slide_idx": entry["slide_idx"],
+                "start_ms": cur_ms,
+                "end_ms": cur_ms + seg_ms,
+                "repeat_index": r,
+                "repeat_total": repeat,
+            })
+            cur_ms += seg_ms
+
+    full = b"".join(chunks)
+    await db.dua_full_audio_cache.update_one(
+        {"_id": voice_key},
+        {"$set": {
+            "audio": full,
+            "timeline": timeline,
+            "voice_id": voice_id,
+            "model_id": _ELEVEN_MODEL,
+            "bytes": len(full),
+            "duration_ms": cur_ms,
+            "segments": len(timeline),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
+    )
+    return full, timeline
+
+
+@api.get("/full-dua/timeline")
+async def get_full_dua_timeline(voice: str = Query("male", regex="^(male|female)$")):
+    """Returns the timeline JSON so the frontend can sync card scroll to audio currentTime."""
+    voice_key, _ = _resolve_voice(voice)
+    _, timeline = await _build_full_dua_audio(voice_key)
+    return {
+        "voice": voice_key,
+        "segments": timeline,
+        "total_segments": len(timeline),
+        "duration_ms": timeline[-1]["end_ms"] if timeline else 0,
+    }
+
+
+@api.get("/full-dua/audio")
+async def get_full_dua_audio(voice: str = Query("male", regex="^(male|female)$")):
+    """Returns the entire Holy Du'a (110+ verses with repeats + 50 Imam names) as a single MP3."""
+    voice_key, _ = _resolve_voice(voice)
+    audio, _ = await _build_full_dua_audio(voice_key)
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Content-Disposition": f'inline; filename="holy-dua-{voice_key}.mp3"',
+            "Accept-Ranges": "bytes",
+        },
+    )
+
+
 @api.get("/family-corner")
 async def family_corner(stage: Optional[str] = None):
     items = list(FAMILY_CORNER)
@@ -3072,7 +3231,7 @@ async def seed_data():
 
     # ── Jamatkhana directory ──
     # Bumped seed version forces a full reseed so new entries flow in.
-    if await db.jamatkhanas.count_documents({"seed_version": {"$gte": 2}}) == 0:
+    if await db.jamatkhanas.count_documents({"seed_version": {"$gte": 3}}) == 0:
         await db.jamatkhanas.delete_many({})
         jks = [
             # Canada
@@ -3149,18 +3308,63 @@ async def seed_data():
             ("Dar es Salaam Jamatkhana", "Dar es Salaam", "Tanzania", -6.7924, 39.2083, "Dar es Salaam"),
             ("Arusha Jamatkhana", "Arusha", "Tanzania", -3.3869, 36.6829, "Arusha"),
             ("Kampala Jamatkhana", "Kampala", "Uganda", 0.3476, 32.5825, "Kampala"),
-            # India
+            # India — Mumbai metro
             ("Hasanabad Jamatkhana", "Mumbai", "India", 18.9750, 72.8258, "Mazgaon, Mumbai"),
-            ("Darkhana Jamatkhana Mumbai", "Mumbai", "India", 18.9388, 72.8354, "Mumbai"),
-            ("Bandra Jamatkhana", "Mumbai", "India", 19.0596, 72.8295, "Bandra, Mumbai"),
-            ("Pune Jamatkhana", "Pune", "India", 18.5204, 73.8567, "Pune"),
+            ("Darkhana Jamatkhana Mumbai", "Mumbai", "India", 18.9388, 72.8354, "Bhendi Bazaar, Mumbai"),
+            ("Bandra Jamatkhana", "Mumbai", "India", 19.0596, 72.8295, "Bandra West, Mumbai"),
+            ("Andheri Jamatkhana", "Mumbai", "India", 19.1197, 72.8464, "Andheri West, Mumbai"),
+            ("Versova Jamatkhana", "Mumbai", "India", 19.1314, 72.8137, "Versova, Andheri West, Mumbai"),
+            ("Jogeshwari Jamatkhana", "Mumbai", "India", 19.1330, 72.8488, "Jogeshwari, Mumbai"),
+            ("Goregaon Jamatkhana", "Mumbai", "India", 19.1646, 72.8493, "Goregaon West, Mumbai"),
+            ("Malad Jamatkhana", "Mumbai", "India", 19.1864, 72.8484, "Malad West, Mumbai"),
+            ("Kandivali Jamatkhana", "Mumbai", "India", 19.2094, 72.8526, "Kandivali West, Mumbai"),
+            ("Borivali Jamatkhana", "Mumbai", "India", 19.2335, 72.8504, "Borivali West, Mumbai"),
+            ("Dahisar Jamatkhana", "Mumbai", "India", 19.2491, 72.8631, "Dahisar, Mumbai"),
+            ("Mira Road Jamatkhana - 1", "Mira Road", "India", 19.2810, 72.8546, "Mira Road East, Thane"),
+            ("Mira Road Jamatkhana - 2", "Mira Road", "India", 19.2864, 72.8576, "Mira Road East, Thane"),
+            ("Mira Road Jamatkhana - 3", "Mira Road", "India", 19.2904, 72.8615, "Mira Road East, Thane"),
+            ("Bhayandar Jamatkhana", "Bhayandar", "India", 19.3022, 72.8514, "Bhayandar, Thane"),
+            ("Vasai Jamatkhana", "Vasai", "India", 19.3919, 72.8397, "Vasai West, Palghar"),
+            ("Virar Jamatkhana", "Virar", "India", 19.4559, 72.8113, "Virar West, Palghar"),
+            ("Nala Sopara Jamatkhana", "Nalasopara", "India", 19.4250, 72.8170, "Nala Sopara, Palghar"),
+            ("Thane Jamatkhana", "Thane", "India", 19.2183, 72.9781, "Thane West"),
+            ("Mulund Jamatkhana", "Mumbai", "India", 19.1726, 72.9568, "Mulund West, Mumbai"),
+            ("Bhandup Jamatkhana", "Mumbai", "India", 19.1448, 72.9367, "Bhandup, Mumbai"),
+            ("Ghatkopar Jamatkhana", "Mumbai", "India", 19.0858, 72.9081, "Ghatkopar East, Mumbai"),
+            ("Chembur Jamatkhana", "Mumbai", "India", 19.0626, 72.8997, "Chembur, Mumbai"),
+            ("Kurla Jamatkhana", "Mumbai", "India", 19.0728, 72.8826, "Kurla West, Mumbai"),
+            ("Sion Jamatkhana", "Mumbai", "India", 19.0376, 72.8625, "Sion, Mumbai"),
+            ("Dadar Jamatkhana", "Mumbai", "India", 19.0184, 72.8442, "Dadar West, Mumbai"),
+            ("Worli Jamatkhana", "Mumbai", "India", 18.9938, 72.8170, "Worli, Mumbai"),
+            ("Mahim Jamatkhana", "Mumbai", "India", 19.0410, 72.8420, "Mahim, Mumbai"),
+            ("Khar Jamatkhana", "Mumbai", "India", 19.0696, 72.8395, "Khar West, Mumbai"),
+            ("Santacruz Jamatkhana", "Mumbai", "India", 19.0822, 72.8413, "Santacruz West, Mumbai"),
+            ("Powai Jamatkhana", "Mumbai", "India", 19.1197, 72.9078, "Powai, Mumbai"),
+            ("Vashi Jamatkhana", "Navi Mumbai", "India", 19.0760, 73.0007, "Vashi, Navi Mumbai"),
+            ("Nerul Jamatkhana", "Navi Mumbai", "India", 19.0330, 73.0297, "Nerul, Navi Mumbai"),
+            ("Belapur Jamatkhana", "Navi Mumbai", "India", 19.0152, 73.0376, "CBD Belapur, Navi Mumbai"),
+            ("Dombivli Jamatkhana", "Dombivli", "India", 19.2183, 73.0867, "Dombivli East"),
+            ("Kalyan Jamatkhana", "Kalyan", "India", 19.2403, 73.1305, "Kalyan West"),
+            ("Ulhasnagar Jamatkhana", "Ulhasnagar", "India", 19.2215, 73.1645, "Ulhasnagar"),
+            # India — Gujarat & Western India
+            ("Pune Jamatkhana", "Pune", "India", 18.5204, 73.8567, "Camp, Pune"),
+            ("Pune Camp Jamatkhana", "Pune", "India", 18.5128, 73.8794, "Pune Camp"),
             ("Ahmedabad Jamatkhana", "Ahmedabad", "India", 23.0225, 72.5714, "Ahmedabad"),
+            ("Vadodara Jamatkhana", "Vadodara", "India", 22.3072, 73.1812, "Vadodara"),
+            ("Surat Jamatkhana", "Surat", "India", 21.1702, 72.8311, "Surat"),
+            ("Rajkot Jamatkhana", "Rajkot", "India", 22.3039, 70.8022, "Rajkot"),
+            ("Jamnagar Jamatkhana", "Jamnagar", "India", 22.4707, 70.0577, "Jamnagar"),
+            ("Junagadh Jamatkhana", "Junagadh", "India", 21.5222, 70.4579, "Junagadh"),
+            ("Bhuj Jamatkhana", "Bhuj", "India", 23.2419, 69.6669, "Bhuj, Kutch"),
+            ("Bhavnagar Jamatkhana", "Bhavnagar", "India", 21.7645, 72.1519, "Bhavnagar"),
+            ("Porbandar Jamatkhana", "Porbandar", "India", 21.6417, 69.6293, "Porbandar"),
+            ("Sidhpur Jamatkhana", "Sidhpur", "India", 23.9166, 72.3793, "Sidhpur, Patan"),
+            # India — Other metros
             ("Hyderabad Jamatkhana", "Hyderabad", "India", 17.3850, 78.4867, "Hyderabad"),
             ("Bangalore Jamatkhana", "Bangalore", "India", 12.9716, 77.5946, "Bangalore"),
             ("Chennai Jamatkhana", "Chennai", "India", 13.0827, 80.2707, "Chennai"),
             ("Delhi Jamatkhana", "New Delhi", "India", 28.6139, 77.2090, "New Delhi"),
-            ("Vadodara Jamatkhana", "Vadodara", "India", 22.3072, 73.1812, "Vadodara"),
-            ("Surat Jamatkhana", "Surat", "India", 21.1702, 72.8311, "Surat"),
+            ("Kolkata Jamatkhana", "Kolkata", "India", 22.5726, 88.3639, "Kolkata"),
             # Pakistan
             ("Garden Jamatkhana", "Karachi", "Pakistan", 24.8693, 67.0231, "Garden, Karachi"),
             ("Darkhana Jamatkhana Karachi", "Karachi", "Pakistan", 24.8607, 67.0011, "Karachi"),
@@ -3196,27 +3400,25 @@ async def seed_data():
                 "lng": lng,
                 "address": addr,
                 "type": "jamatkhana",
-                "seed_version": 2,
+                "seed_version": 3,
             }
             for i, (name, city, country, lat, lng, addr) in enumerate(jks, start=1)
         ])
 
 
 async def _prewarm_audio_cache():
-    """Pre-cache verse 1 of each rakaat for both voices so first-tap is instant.
-    Runs in background — fire-and-forget. Idempotent: skips already-cached entries."""
+    """Pre-cache verse 1 of each rakaat + the full single-MP3 Du'a for both voices.
+    Runs in background — fire-and-forget. Idempotent: skips entries already cached."""
     if not _ELEVEN_KEY:
         return
     try:
         seen_rakaats = set()
         warmup = []
-        # Always include the very first card of each rakaat (lowest 'order')
         for d in sorted(DUA, key=lambda x: (x.get("rakaat", 0), x.get("order", 0))):
             r = d.get("rakaat")
             if r and r not in seen_rakaats:
                 seen_rakaats.add(r)
                 warmup.append(d)
-        # Pre-cache the first Imam name as well (most-tapped on Tasbih card)
         for voice_key, voice_id in _ELEVEN_VOICES.items():
             for d in warmup:
                 cache_key = f"dua:{voice_key}:{d['id']}"
@@ -3228,7 +3430,20 @@ async def _prewarm_audio_cache():
                     logger.info(f"audio prewarm: {cache_key}")
                 except Exception as e:
                     logger.warning(f"audio prewarm failed for {cache_key}: {e}")
-        logger.info("audio prewarm complete")
+        logger.info("audio prewarm (rakaat openers) complete")
+
+        # Build the full-Du'a single MP3 for both voices (idempotent, cached)
+        for voice_key in _ELEVEN_VOICES.keys():
+            existing = await db.dua_full_audio_cache.find_one({"_id": voice_key}, {"_id": 1})
+            if existing:
+                logger.info(f"full-dua already cached: {voice_key}")
+                continue
+            try:
+                logger.info(f"full-dua build started: {voice_key} (may take 1-2 min)")
+                audio, timeline = await _build_full_dua_audio(voice_key)
+                logger.info(f"full-dua built: {voice_key} — {len(audio)} bytes, {len(timeline)} segments")
+            except Exception as e:
+                logger.warning(f"full-dua build failed for {voice_key}: {e}")
     except Exception as e:
         logger.warning(f"audio prewarm task error: {e}")
 
