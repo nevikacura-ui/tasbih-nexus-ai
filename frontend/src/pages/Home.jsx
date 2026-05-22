@@ -32,10 +32,10 @@ export default function HomePage() {
       };
       try {
         const [n, r, t, c, nt, ev, cal] = await Promise.all([
-          fetchRetry("/noor/today"),
-          fetchRetry("/reflections"),
-          fetchRetry("/tasbih/state"),
-          fetchRetry("/communities"),
+          fetchRetry("/noor/today").catch(() => ({ data: null })),
+          api.get("/reflections").catch(() => ({ data: { reflections: [] } })),
+          api.get("/tasbih/state").catch(() => ({ data: { today: 0, streak: 0, total: 0 } })),
+          api.get("/communities").catch(() => ({ data: { communities: [] } })),
           api.get("/notifications").catch(() => ({ data: { unread: 0 } })),
           api.get("/events").catch(() => ({ data: { events: [] } })),
           api.get("/calendar/today").catch(() => ({ data: null })),

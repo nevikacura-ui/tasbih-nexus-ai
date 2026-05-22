@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { AuthProvider } from "./lib/auth";
+import { AuthProvider, useAuth } from "./lib/auth";
 import SplashScreen from "./components/SplashScreen";
 import ReminderToaster from "./components/ReminderToaster";
+import LoginRequired from "./components/LoginRequired";
 import AuthCallback from "./pages/AuthCallback";
 import LoginPage from "./pages/Login";
 import OnboardingPage from "./pages/Onboarding";
@@ -37,9 +38,22 @@ import DuaPage from "./pages/Dua";
 import FamilyPage from "./pages/Family";
 
 function Protected({ children }) {
-  // Non-blocking: always render. Auth happens in background and pages handle
-  // missing data gracefully. This guarantees the user is NEVER stuck on a
-  // loading screen, regardless of cookie/storage quirks on mobile browsers.
+  return children;
+}
+
+// Show the page only to non-guest users. Guests see a friendly Sign-in CTA.
+function MembersOnly({ feature, title, children }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex min-h-[100svh] items-center justify-center bg-ivory text-deep/40">
+        <p className="text-xs uppercase tracking-[0.3em]">Loading…</p>
+      </div>
+    );
+  }
+  if (!user || user.status === "guest") {
+    return <LoginRequired feature={feature} title={title} />;
+  }
   return children;
 }
 
@@ -50,37 +64,42 @@ function Router() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
-      <Route path="/" element={<Protected><HomePage /></Protected>} />
-      <Route path="/noor" element={<Protected><NoorPage /></Protected>} />
-      <Route path="/tasbih" element={<Protected><TasbihPage /></Protected>} />
-      <Route path="/journal" element={<Protected><JournalPage /></Protected>} />
-      <Route path="/quran" element={<Protected><QuranPage /></Protected>} />
-      <Route path="/ramadan" element={<Protected><RamadanPage /></Protected>} />
-      <Route path="/reminders" element={<Protected><RemindersPage /></Protected>} />
-      <Route path="/moderation" element={<Protected><ModerationPage /></Protected>} />
-      <Route path="/mentors" element={<Protected><MentorsPage /></Protected>} />
-      <Route path="/khidmah" element={<Protected><KhidmahPage /></Protected>} />
-      <Route path="/jamatkhana" element={<Protected><JamatkhanaPage /></Protected>} />
-      <Route path="/notifications" element={<Protected><NotificationsPage /></Protected>} />
-      <Route path="/sangat" element={<Protected><SangatPage /></Protected>} />
-      <Route path="/orgs" element={<Protected><OrgsPage /></Protected>} />
-      <Route path="/orgs/me" element={<Protected><OrgProfilePage /></Protected>} />
-      <Route path="/noor/digest" element={<Protected><NoorDigestPage /></Protected>} />
-      <Route path="/calendar" element={<Protected><CalendarPage /></Protected>} />
-      <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
-      <Route path="/stewards" element={<Protected><StewardsPage /></Protected>} />
-      <Route path="/year-in-noor" element={<Protected><YearMosaicPage /></Protected>} />
-      <Route path="/ginan" element={<Protected><GinanPage /></Protected>} />
-      <Route path="/dua" element={<Protected><DuaPage /></Protected>} />
-      <Route path="/family" element={<Protected><FamilyPage /></Protected>} />
+      <Route path="/onboarding" element={<OnboardingPage />} />
+
+      {/* ── Open to everyone (guest-friendly) ─────────────────── */}
+      <Route path="/" element={<HomePage />} />
+      <Route path="/noor" element={<NoorPage />} />
+      <Route path="/dua" element={<DuaPage />} />
+      <Route path="/ginan" element={<GinanPage />} />
+      <Route path="/quran" element={<QuranPage />} />
+      <Route path="/ramadan" element={<RamadanPage />} />
+      <Route path="/jamatkhana" element={<JamatkhanaPage />} />
+      <Route path="/calendar" element={<CalendarPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
-      <Route path="/circles" element={<Protected><CommunitiesPage /></Protected>} />
-      <Route path="/circles/:id/chat" element={<Protected><CommunityChatPage /></Protected>} />
-      <Route path="/events" element={<Protected><EventsPage /></Protected>} />
-      <Route path="/profile" element={<Protected><ProfilePage /></Protected>} />
-      <Route path="/invites" element={<Protected><InvitesPage /></Protected>} />
+
+      {/* ── Members only (guests see a Sign-in CTA) ──────────── */}
+      <Route path="/circles" element={<MembersOnly feature="circles" title="Sign in to join Circles"><CommunitiesPage /></MembersOnly>} />
+      <Route path="/circles/:id/chat" element={<MembersOnly feature="circle chats" title="Sign in to chat"><CommunityChatPage /></MembersOnly>} />
+      <Route path="/events" element={<MembersOnly feature="events" title="Sign in to view events"><EventsPage /></MembersOnly>} />
+      <Route path="/profile" element={<MembersOnly feature="your profile" title="Sign in to view your profile"><ProfilePage /></MembersOnly>} />
+      <Route path="/invites" element={<MembersOnly feature="invites" title="Sign in to invite others"><InvitesPage /></MembersOnly>} />
+      <Route path="/journal" element={<MembersOnly feature="your journal" title="Sign in to journal"><JournalPage /></MembersOnly>} />
+      <Route path="/tasbih" element={<MembersOnly feature="your tasbih counter" title="Sign in to count your tasbih"><TasbihPage /></MembersOnly>} />
+      <Route path="/notifications" element={<MembersOnly feature="notifications"><NotificationsPage /></MembersOnly>} />
+      <Route path="/sangat" element={<MembersOnly feature="My Sangat"><SangatPage /></MembersOnly>} />
+      <Route path="/mentors" element={<MembersOnly feature="mentorship"><MentorsPage /></MembersOnly>} />
+      <Route path="/khidmah" element={<MembersOnly feature="khidmah"><KhidmahPage /></MembersOnly>} />
+      <Route path="/orgs" element={<MembersOnly feature="organisations"><OrgsPage /></MembersOnly>} />
+      <Route path="/orgs/me" element={<MembersOnly feature="your organisation"><OrgProfilePage /></MembersOnly>} />
+      <Route path="/family" element={<MembersOnly feature="Family Corner"><FamilyPage /></MembersOnly>} />
+      <Route path="/reminders" element={<MembersOnly feature="reminders"><RemindersPage /></MembersOnly>} />
+      <Route path="/moderation" element={<MembersOnly feature="moderation"><ModerationPage /></MembersOnly>} />
+      <Route path="/admin" element={<MembersOnly feature="the admin panel"><AdminPage /></MembersOnly>} />
+      <Route path="/stewards" element={<MembersOnly feature="stewards"><StewardsPage /></MembersOnly>} />
+      <Route path="/year-in-noor" element={<MembersOnly feature="Year in Noor"><YearMosaicPage /></MembersOnly>} />
+      <Route path="/noor/digest" element={<MembersOnly feature="your Noor Digest"><NoorDigestPage /></MembersOnly>} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

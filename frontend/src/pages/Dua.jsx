@@ -541,6 +541,7 @@ export default function DuaPage() {
     try { localStorage.setItem("dua.autoAdvance", String(autoAdvance)); } catch (e) { /* ignore */ }
   }, [autoAdvance]);
   const [isAutoPlaying, setIsAutoPlaying] = useState(false); // master "Play All" active?
+  const [ambientMode, setAmbientMode] = useState(true); // dim everything when Play All is on
   const [currentSlideIdx, setCurrentSlideIdx] = useState(0);
   const isAutoPlayingRef = useRef(false);
   useEffect(() => { isAutoPlayingRef.current = isAutoPlaying; }, [isAutoPlaying]);
@@ -586,6 +587,32 @@ export default function DuaPage() {
   // ── Audio playback ─────────────────────────────────────────────
   const [fullTimeline, setFullTimeline] = useState(null); // [{id, kind, slide_idx, start_ms, end_ms, ...}]
   const [fullSegIdx, setFullSegIdx] = useState(-1);
+  const wakeLockRef = useRef(null);
+
+  // Acquire / release screen wake lock so the phone doesn't sleep during recitation
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      if (typeof navigator !== "undefined" && "wakeLock" in navigator) {
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+        wakeLockRef.current.addEventListener?.("release", () => { wakeLockRef.current = null; });
+      }
+    } catch (e) { /* user denied / unsupported */ }
+  }, []);
+  const releaseWakeLock = useCallback(async () => {
+    try {
+      if (wakeLockRef.current) { await wakeLockRef.current.release(); wakeLockRef.current = null; }
+    } catch (e) { /* ignore */ }
+  }, []);
+  // Re-acquire on visibility return (wake lock auto-releases on tab hide)
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible" && isAutoPlayingRef.current && !wakeLockRef.current) {
+        acquireWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [acquireWakeLock]);
 
   const stopAudio = useCallback(() => {
     const el = audioRef.current;
@@ -596,7 +623,8 @@ export default function DuaPage() {
     setLoadingId(null);
     setAudioProgress(0);
     setFullSegIdx(-1);
-  }, []);
+    releaseWakeLock();
+  }, [releaseWakeLock]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -668,13 +696,16 @@ export default function DuaPage() {
       setLoadingId(null);
       setAudioProgress(0);
       setFullSegIdx(-1);
+      releaseWakeLock();
+      if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+        try { navigator.mediaSession.playbackState = "paused"; } catch (e) { /* ignore */ }
+      }
       return;
     }
     // Start the single-MP3 stream
     setIsAutoPlaying(true);
     setLoadingId("__full__");
     try {
-      // Fetch timeline (small JSON) first so we can sync scroll
       let tl = fullTimeline;
       if (!tl || tl.length === 0) {
         const r = await fetch(`${API_BASE}/api/full-dua/timeline?voice=${voice}`);
@@ -690,18 +721,19 @@ export default function DuaPage() {
         setLoadingId(null);
         setAudioProgress(0);
         setFullSegIdx(-1);
+        releaseWakeLock();
       };
       el.onerror = () => {
         setIsAutoPlaying(false);
         setPlayingId(null);
         setLoadingId(null);
+        releaseWakeLock();
       };
       el.onplaying = () => { setLoadingId(null); };
       el.ontimeupdate = () => {
         if (!el.duration || !isFinite(el.duration)) return;
         setAudioProgress(Math.min(1, el.currentTime / el.duration));
         const cur_ms = el.currentTime * 1000;
-        // Binary-ish search for current segment
         const segs = tl;
         let lo = 0, hi = segs.length - 1, hit = -1;
         while (lo <= hi) {
@@ -714,13 +746,11 @@ export default function DuaPage() {
         if (hit < 0) return;
         setFullSegIdx((prev) => (prev === hit ? prev : hit));
         const seg = segs[hit];
-        // Update the "currently glowing" verse id (for the play button visual)
         if (seg.kind === "verse") {
           setPlayingId((prev) => (prev === seg.id ? prev : seg.id));
         } else {
           setPlayingId(null);
         }
-        // Scroll to the right slide when slide_idx changes
         if (typeof seg.slide_idx === "number") {
           setCurrentSlideIdx((prev) => {
             if (prev !== seg.slide_idx) {
@@ -736,12 +766,29 @@ export default function DuaPage() {
         }
       };
       await el.play();
+      // Acquire wake lock once playback has actually started
+      acquireWakeLock();
+      // Media session metadata for lock-screen
+      if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
+        try {
+          navigator.mediaSession.metadata = new window.MediaMetadata({
+            title: "Holy Du'a",
+            artist: voice === "female" ? "Tasbih.ai · Female reciter" : "Tasbih.ai · Chaouki",
+            album: "Six Rakaats · Ismaili Du'a",
+          });
+          navigator.mediaSession.playbackState = "playing";
+          navigator.mediaSession.setActionHandler("pause", () => { toggleAutoPlay(); });
+          navigator.mediaSession.setActionHandler("play", () => { toggleAutoPlay(); });
+          navigator.mediaSession.setActionHandler("stop", () => { toggleAutoPlay(); });
+        } catch (e) { /* unsupported */ }
+      }
     } catch (e) {
       console.warn("full Du'a play failed", e);
       setIsAutoPlaying(false);
       setLoadingId(null);
+      releaseWakeLock();
     }
-  }, [isAutoPlaying, voice, fullTimeline]);
+  }, [isAutoPlaying, voice, fullTimeline, acquireWakeLock, releaseWakeLock]);
 
   // Build slides: pairs of duas, plus dedicated interlude slides where requested.
   // A dua with `interlude_after` becomes a solo card and the interlude follows it.
@@ -818,6 +865,23 @@ export default function DuaPage() {
   };
 
   const activeTheme = RAKAAT_THEMES[currentRakaat] || RAKAAT_THEMES[1];
+
+  // Currently-playing segment + verse (for the "Sit with Du'a" ambient overlay)
+  const currentSeg = fullSegIdx >= 0 && fullTimeline ? fullTimeline[fullSegIdx] : null;
+  const currentVerse = useMemo(() => {
+    if (!currentSeg) return null;
+    if (currentSeg.kind === "verse") return items.find((d) => d.id === currentSeg.id) || null;
+    if (currentSeg.kind === "name") return { isImamName: true, name: currentSeg.id.replace(/^imam:/, "") };
+    return null;
+  }, [currentSeg, items]);
+  const fmtTime = (ms) => {
+    const total = Math.max(0, Math.floor((ms || 0) / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+  const fullDurationMs = fullTimeline && fullTimeline.length ? fullTimeline[fullTimeline.length - 1].end_ms : 0;
+  const fullCurrentMs = currentSeg ? Math.round(audioProgress * fullDurationMs) : 0;
 
   return (
     <div className="relative mx-auto w-full max-w-[480px] bg-black" data-testid="dua-page">
@@ -1161,6 +1225,174 @@ export default function DuaPage() {
         </div>
       )}
 
+      {/* ── Sit with Du'a — ambient mode overlay ─────────────────── */}
+      {isAutoPlaying && ambientMode && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          data-testid="dua-ambient-overlay"
+          style={{ background: "linear-gradient(180deg, #050d10 0%, #0a1b1a 50%, #050d10 100%)" }}
+        >
+          {/* Beautiful jamatkhana silhouette */}
+          <svg
+            viewBox="0 0 800 400"
+            preserveAspectRatio="xMidYMax slice"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-[58%] w-full"
+            aria-hidden="true"
+          >
+            <defs>
+              <linearGradient id="jkFade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(232,195,106,0.0)" />
+                <stop offset="60%" stopColor="rgba(232,195,106,0.18)" />
+                <stop offset="100%" stopColor="rgba(232,195,106,0.32)" />
+              </linearGradient>
+              <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="rgba(244,216,138,0.9)" />
+                <stop offset="60%" stopColor="rgba(244,216,138,0.15)" />
+                <stop offset="100%" stopColor="rgba(244,216,138,0)" />
+              </radialGradient>
+            </defs>
+            {/* Moon */}
+            <circle cx="650" cy="80" r="32" fill="url(#moonGlow)" />
+            <circle cx="650" cy="80" r="14" fill="#F4D88A" opacity="0.85" />
+            {/* Stars */}
+            {[
+              [80, 60], [180, 110], [280, 50], [420, 90], [520, 140],
+              [120, 180], [340, 170], [600, 200], [720, 130], [40, 240],
+            ].map(([x, y], i) => (
+              <circle key={i} cx={x} cy={y} r={1.2 + (i % 3) * 0.4} fill="#F4D88A" opacity="0.55" />
+            ))}
+            {/* Outer left minaret */}
+            <path d="M40,400 L40,210 Q44,200 44,194 Q44,182 40,176 Q36,182 36,194 Q36,200 40,210 Z M36,210 L44,210 L44,400 Z" fill="url(#jkFade)" />
+            <circle cx="40" cy="172" r="2.4" fill="#E8C36A" opacity="0.9" />
+            {/* Outer right minaret */}
+            <path d="M760,400 L760,210 Q764,200 764,194 Q764,182 760,176 Q756,182 756,194 Q756,200 760,210 Z M756,210 L764,210 L764,400 Z" fill="url(#jkFade)" />
+            <circle cx="760" cy="172" r="2.4" fill="#E8C36A" opacity="0.9" />
+            {/* Side wings */}
+            <path d="M90,400 L90,300 L200,300 L200,400 Z" fill="url(#jkFade)" />
+            <path d="M600,400 L600,300 L710,300 L710,400 Z" fill="url(#jkFade)" />
+            {/* Inner minarets */}
+            <path d="M220,400 L220,250 Q224,242 224,238 Q224,228 220,222 Q216,228 216,238 Q216,242 220,250 Z M216,250 L224,250 L224,400 Z" fill="url(#jkFade)" />
+            <path d="M580,400 L580,250 Q584,242 584,238 Q584,228 580,222 Q576,228 576,238 Q576,242 580,250 Z M576,250 L584,250 L584,400 Z" fill="url(#jkFade)" />
+            {/* Central dome + arch + sub-domes */}
+            <path d="M260,400 L260,260 Q260,180 400,168 Q540,180 540,260 L540,400 Z" fill="url(#jkFade)" />
+            {/* Crescent finial on central dome */}
+            <circle cx="400" cy="160" r="4" fill="#E8C36A" opacity="0.95" />
+            <path d="M396,148 Q400,140 404,148" stroke="#E8C36A" strokeWidth="1.4" fill="none" opacity="0.9" />
+            {/* Arched windows */}
+            <path d="M340,400 L340,330 Q340,300 360,300 Q380,300 380,330 L380,400 Z" fill="rgba(232,195,106,0.08)" />
+            <path d="M420,400 L420,330 Q420,300 440,300 Q460,300 460,330 L460,400 Z" fill="rgba(232,195,106,0.08)" />
+            {/* Two small flanking domes */}
+            <path d="M115,400 L115,322 Q115,290 145,288 Q175,290 175,322 L175,400 Z" fill="url(#jkFade)" />
+            <path d="M625,400 L625,322 Q625,290 655,288 Q685,290 685,322 L685,400 Z" fill="url(#jkFade)" />
+          </svg>
+
+          {/* Grain overlay */}
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
+            style={{
+              backgroundImage:
+                "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.6'/></svg>\")",
+            }}
+          />
+
+          {/* Top status row */}
+          <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 pt-7">
+            <button
+              type="button"
+              onClick={() => setAmbientMode(false)}
+              data-testid="dua-ambient-show-cards"
+              aria-label="Show verse cards"
+              className="flex h-10 items-center gap-1.5 rounded-full border border-ivory/15 bg-black/30 px-3 text-[10px] uppercase tracking-[0.22em] text-ivory/70 backdrop-blur-md tap-scale"
+            >
+              Cards
+            </button>
+            <span
+              className="rounded-full border border-[#E8C36A]/40 bg-black/30 px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] text-[#E8C36A] backdrop-blur-md"
+            >
+              Rakaat {["", "I", "II", "III", "IV", "V", "VI"][currentRakaat]}
+            </span>
+          </div>
+
+          {/* Centre — current verse */}
+          <div className="relative z-10 mx-auto flex w-full max-w-[420px] flex-col items-center px-7 text-center text-ivory">
+            {currentVerse?.isImamName ? (
+              <>
+                <p className="text-[10px] uppercase tracking-[0.28em] text-[#E8C36A]">
+                  Tasbih of the Imams
+                </p>
+                <h2
+                  className="mt-5 font-display leading-[1.18]"
+                  style={{ fontSize: "clamp(26px, 6.5vw, 38px)", textShadow: "0 2px 30px rgba(0,0,0,0.55)" }}
+                  data-testid="dua-ambient-title"
+                >
+                  {currentVerse.name}
+                </h2>
+              </>
+            ) : currentVerse ? (
+              <>
+                <p className="text-[10px] uppercase tracking-[0.28em] text-[#E8C36A]" data-testid="dua-ambient-title">
+                  {currentVerse.title}
+                </p>
+                <h2
+                  className="mt-5 font-display leading-[1.18]"
+                  style={{ fontSize: "clamp(24px, 6.2vw, 36px)", textShadow: "0 2px 30px rgba(0,0,0,0.55)" }}
+                >
+                  {currentVerse.transliteration}
+                </h2>
+                <div className="my-5 h-px w-12 bg-gradient-to-r from-transparent via-[#E8C36A] to-transparent" />
+                <p
+                  className="text-[14px] leading-relaxed text-ivory/80"
+                  style={{ textShadow: "0 1px 16px rgba(0,0,0,0.45)" }}
+                  data-testid="dua-ambient-english"
+                >
+                  {currentVerse.english}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs uppercase tracking-[0.3em] text-ivory/45">Listening…</p>
+            )}
+          </div>
+
+          {/* Bottom controls */}
+          <div className="absolute inset-x-0 bottom-0 z-10 px-7 pb-9">
+            {/* Progress bar with time labels */}
+            <div className="flex items-center gap-3 text-[10px] tracking-[0.18em] text-ivory/55">
+              <span data-testid="dua-ambient-time-current">{fmtTime(fullCurrentMs)}</span>
+              <div className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-ivory/10">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full"
+                  style={{
+                    width: `${Math.max(0, Math.min(1, audioProgress)) * 100}%`,
+                    background: "linear-gradient(90deg, #E8C36A 0%, #F4D88A 100%)",
+                    boxShadow: "0 0 18px rgba(232,195,106,0.7)",
+                  }}
+                />
+              </div>
+              <span data-testid="dua-ambient-time-total">{fmtTime(fullDurationMs)}</span>
+            </div>
+
+            {/* Pause + voice + ambient hint */}
+            <div className="mt-6 flex items-center justify-center gap-4">
+              <button
+                type="button"
+                onClick={toggleAutoPlay}
+                data-testid="dua-ambient-pause"
+                aria-label="Pause"
+                className="flex h-14 w-14 items-center justify-center rounded-full text-deep shadow-[0_0_36px_rgba(232,195,106,0.55)] tap-scale"
+                style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+              >
+                <Pause className="h-6 w-6" />
+              </button>
+            </div>
+            <p className="mt-5 text-center text-[10px] uppercase tracking-[0.28em] text-ivory/40">
+              Sit · Listen · Breathe
+            </p>
+            <p className="mt-1 text-center text-[10px] text-ivory/30">
+              Your screen will stay awake
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -143,6 +143,14 @@ async def current_user(
     return User(**user_doc)
 
 
+async def require_member(user: User = Depends(current_user)) -> User:
+    """Block guest sessions from member-only actions (Circles join/chat/post)."""
+    status = getattr(user, "status", None)
+    if status == "guest":
+        raise HTTPException(status_code=403, detail="Login required to join the conversation.")
+    return user
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Routes — Invite verification & Auth
 # ──────────────────────────────────────────────────────────────────────────────
@@ -564,7 +572,7 @@ async def auth_logout(response: Response, session_token: Optional[str] = Cookie(
 # Invites — let members issue invitation codes
 # ──────────────────────────────────────────────────────────────────────────────
 @api.get("/invites/mine")
-async def list_my_invites(user: User = Depends(current_user)):
+async def list_my_invites(user: User = Depends(require_member)):
     codes = await db.invite_codes.find({"issued_by": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
     return {"codes": codes, "available": "unlimited"}
 
@@ -627,7 +635,7 @@ def _invite_email_html(*, recipient_name: str, sender_name: str, second_inviter:
 
 
 @api.post("/invites/send-email")
-async def send_invite_email(body: InviteEmailIn, user: User = Depends(current_user)):
+async def send_invite_email(body: InviteEmailIn, user: User = Depends(require_member)):
     """Mint TWO fresh codes issued by the sender (and optionally co-signed by a
     second member) and send them to the recipient via Resend."""
     if not RESEND_API_KEY:
@@ -703,7 +711,7 @@ def _gen_invite_code() -> str:
 
 
 @api.post("/invites/create")
-async def create_invite(user: User = Depends(current_user)):
+async def create_invite(user: User = Depends(require_member)):
     # Unlimited invitation generation — every member can invite as many as they wish.
     # Generate unique alphanumeric 8-char code
     for _ in range(8):
@@ -724,13 +732,13 @@ async def create_invite(user: User = Depends(current_user)):
 # Journal
 # ──────────────────────────────────────────────────────────────────────────────
 @api.get("/journal")
-async def list_journal(user: User = Depends(current_user)):
+async def list_journal(user: User = Depends(require_member)):
     items = await db.journal.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
     return {"entries": items}
 
 
 @api.post("/journal", response_model=JournalEntry)
-async def create_journal(body: JournalEntryIn, user: User = Depends(current_user)):
+async def create_journal(body: JournalEntryIn, user: User = Depends(require_member)):
     entry = {
         "entry_id": f"jnl_{uuid.uuid4().hex[:12]}",
         "user_id": user.user_id,
@@ -749,7 +757,7 @@ async def create_journal(body: JournalEntryIn, user: User = Depends(current_user
 # Tasbih
 # ──────────────────────────────────────────────────────────────────────────────
 @api.get("/tasbih/state")
-async def tasbih_state(user: User = Depends(current_user)):
+async def tasbih_state(user: User = Depends(require_member)):
     state = await db.tasbih_state.find_one({"user_id": user.user_id}, {"_id": 0}) or {
         "user_id": user.user_id, "total": 0, "streak": 0, "last_day": None,
     }
@@ -764,7 +772,7 @@ async def tasbih_state(user: User = Depends(current_user)):
 
 
 @api.post("/tasbih/record")
-async def tasbih_record(body: TasbihSessionIn, user: User = Depends(current_user)):
+async def tasbih_record(body: TasbihSessionIn, user: User = Depends(require_member)):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     await db.tasbih_sessions.insert_one({
         "session_id": f"tsb_{uuid.uuid4().hex[:12]}",
@@ -913,7 +921,7 @@ async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
 
 
 @api.get("/noor/history/{session_id}")
-async def noor_history(session_id: str, user: User = Depends(current_user)):
+async def noor_history(session_id: str, user: User = Depends(require_member)):
     items = await db.noor_messages.find(
         {"session_id": session_id, "user_id": user.user_id}, {"_id": 0}
     ).sort("created_at", 1).to_list(length=200)
@@ -930,7 +938,7 @@ async def list_communities():
 
 
 @api.post("/communities/{community_id}/join")
-async def join_community(community_id: str, user: User = Depends(current_user)):
+async def join_community(community_id: str, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -960,7 +968,7 @@ async def list_events():
 
 
 @api.post("/events/{event_id}/rsvp")
-async def rsvp(event_id: str, user: User = Depends(current_user)):
+async def rsvp(event_id: str, user: User = Depends(require_member)):
     ev = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     if not ev:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -987,7 +995,7 @@ class ChatMessageIn(BaseModel):
 
 
 @api.get("/communities/{community_id}/messages")
-async def list_messages(community_id: str, since: Optional[str] = None, user: User = Depends(current_user)):
+async def list_messages(community_id: str, since: Optional[str] = None, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -1003,7 +1011,7 @@ async def list_messages(community_id: str, since: Optional[str] = None, user: Us
 
 
 @api.post("/communities/{community_id}/messages")
-async def send_message(community_id: str, body: ChatMessageIn, user: User = Depends(current_user)):
+async def send_message(community_id: str, body: ChatMessageIn, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -1040,7 +1048,7 @@ NOOR_MOMENT_PROMPTS = [
 
 
 @api.post("/communities/{community_id}/noor-moment")
-async def noor_moment(community_id: str, user: User = Depends(current_user)):
+async def noor_moment(community_id: str, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -1177,7 +1185,7 @@ def _ramadan_status():
 
 
 @api.get("/ramadan/state")
-async def ramadan_state(user: User = Depends(current_user)):
+async def ramadan_state(user: User = Depends(require_member)):
     status = _ramadan_status()
     logged = await db.ramadan_log.find({"user_id": user.user_id}, {"_id": 0}).to_list(length=40)
     return {**status, "logged_days": [l["day"] for l in logged], "entries": logged}
@@ -1190,7 +1198,7 @@ class RamadanLogIn(BaseModel):
 
 
 @api.post("/ramadan/log")
-async def ramadan_log(body: RamadanLogIn, user: User = Depends(current_user)):
+async def ramadan_log(body: RamadanLogIn, user: User = Depends(require_member)):
     if body.day < 1 or body.day > RAMADAN_DAYS:
         raise HTTPException(status_code=400, detail="Invalid Ramadan day")
     await db.ramadan_log.update_one(
@@ -1216,7 +1224,7 @@ class ReminderIn(BaseModel):
 
 
 @api.get("/reminders")
-async def list_reminders(user: User = Depends(current_user)):
+async def list_reminders(user: User = Depends(require_member)):
     items = await db.reminders.find({"user_id": user.user_id}, {"_id": 0}).sort("time", 1).to_list(length=50)
     if not items:
         # Seed default soft prayer reminders the first time
@@ -1234,7 +1242,7 @@ async def list_reminders(user: User = Depends(current_user)):
 
 
 @api.post("/reminders")
-async def create_reminder(body: ReminderIn, user: User = Depends(current_user)):
+async def create_reminder(body: ReminderIn, user: User = Depends(require_member)):
     rem = {
         "reminder_id": f"rem_{uuid.uuid4().hex[:8]}",
         "user_id": user.user_id,
@@ -1245,7 +1253,7 @@ async def create_reminder(body: ReminderIn, user: User = Depends(current_user)):
 
 
 @api.patch("/reminders/{rid}")
-async def update_reminder(rid: str, body: ReminderIn, user: User = Depends(current_user)):
+async def update_reminder(rid: str, body: ReminderIn, user: User = Depends(require_member)):
     r = await db.reminders.find_one_and_update(
         {"reminder_id": rid, "user_id": user.user_id},
         {"$set": body.dict()},
@@ -1257,7 +1265,7 @@ async def update_reminder(rid: str, body: ReminderIn, user: User = Depends(curre
 
 
 @api.delete("/reminders/{rid}")
-async def delete_reminder(rid: str, user: User = Depends(current_user)):
+async def delete_reminder(rid: str, user: User = Depends(require_member)):
     r = await db.reminders.delete_one({"reminder_id": rid, "user_id": user.user_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Reminder not found")
@@ -1316,6 +1324,10 @@ async def ws_community(websocket: WebSocket, community_id: str, token: Optional[
     if not user:
         await websocket.send_text(json.dumps({"type": "error", "message": "auth_required"}))
         await websocket.close(code=4401)
+        return
+    if user.get("status") == "guest":
+        await websocket.send_text(json.dumps({"type": "error", "message": "login_required"}))
+        await websocket.close(code=4403)
         return
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
@@ -1377,7 +1389,7 @@ class CommentIn(BaseModel):
 
 
 @api.get("/communities/{community_id}/posts")
-async def list_posts(community_id: str, user: User = Depends(current_user)):
+async def list_posts(community_id: str, user: User = Depends(require_member)):
     posts = await db.posts.find({"community_id": community_id}, {"_id": 0}).sort("created_at", -1).to_list(length=80)
     # Attach comment counts + my reaction state in one go
     ids = [p["post_id"] for p in posts]
@@ -1397,7 +1409,7 @@ async def list_posts(community_id: str, user: User = Depends(current_user)):
 
 
 @api.post("/communities/{community_id}/posts")
-async def create_post(community_id: str, body: PostIn, user: User = Depends(current_user)):
+async def create_post(community_id: str, body: PostIn, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -1559,7 +1571,7 @@ async def resolve_report(report_id: str, action: str = Query(default="dismiss"),
 
 
 @api.post("/admin/promote")
-async def promote_moderator(email: str, user: User = Depends(current_user)):
+async def promote_moderator(email: str, user: User = Depends(require_member)):
     if user.status != "admin" and user.email.lower() != "admin@tasbih.ai":
         raise HTTPException(status_code=403, detail="Admins only")
     res = await db.users.update_one({"email": email.lower()}, {"$set": {"status": "moderator"}})
@@ -1577,13 +1589,13 @@ def _require_admin(u: User):
 
 
 @api.get("/admin/me")
-async def admin_me(user: User = Depends(current_user)):
+async def admin_me(user: User = Depends(require_member)):
     is_admin = user.status == "admin" or user.email.lower() == "admin@tasbih.ai"
     return {"is_admin": is_admin}
 
 
 @api.get("/admin/orgs")
-async def admin_list_orgs(user: User = Depends(current_user)):
+async def admin_list_orgs(user: User = Depends(require_member)):
     _require_admin(user)
     users = await db.users.find({"role": "org", "org_profile": {"$ne": None}}, {"_id": 0}).sort("created_at", -1).to_list(length=500)
     out = []
@@ -1610,7 +1622,7 @@ class AdminVerifyIn(BaseModel):
 
 
 @api.post("/admin/orgs/{org_id}/verify")
-async def admin_verify_org(org_id: str, body: AdminVerifyIn, user: User = Depends(current_user)):
+async def admin_verify_org(org_id: str, body: AdminVerifyIn, user: User = Depends(require_member)):
     _require_admin(user)
     res = await db.users.update_one(
         {"user_id": org_id, "role": "org"},
@@ -1662,13 +1674,13 @@ async def list_mentors(skill: Optional[str] = None, city: Optional[str] = None):
 
 
 @api.get("/mentors/me")
-async def my_mentor_profile(user: User = Depends(current_user)):
+async def my_mentor_profile(user: User = Depends(require_member)):
     m = await db.mentor_profiles.find_one({"user_id": user.user_id}, {"_id": 0})
     return {"profile": m}
 
 
 @api.post("/mentors/me")
-async def upsert_mentor_profile(body: MentorProfileIn, user: User = Depends(current_user)):
+async def upsert_mentor_profile(body: MentorProfileIn, user: User = Depends(require_member)):
     doc = {
         "user_id": user.user_id,
         "headline": body.headline.strip()[:140],
@@ -1691,13 +1703,13 @@ async def upsert_mentor_profile(body: MentorProfileIn, user: User = Depends(curr
 
 
 @api.delete("/mentors/me")
-async def delete_mentor_profile(user: User = Depends(current_user)):
+async def delete_mentor_profile(user: User = Depends(require_member)):
     await db.mentor_profiles.delete_one({"user_id": user.user_id})
     return {"ok": True}
 
 
 @api.post("/mentorship/request")
-async def request_mentorship(body: MentorshipRequestIn, user: User = Depends(current_user)):
+async def request_mentorship(body: MentorshipRequestIn, user: User = Depends(require_member)):
     if body.mentor_id == user.user_id:
         raise HTTPException(status_code=400, detail="You cannot request yourself.")
     mentor = await db.mentor_profiles.find_one({"user_id": body.mentor_id}, {"_id": 0})
@@ -1725,7 +1737,7 @@ async def request_mentorship(body: MentorshipRequestIn, user: User = Depends(cur
 
 
 @api.get("/mentorship/requests")
-async def my_requests(user: User = Depends(current_user)):
+async def my_requests(user: User = Depends(require_member)):
     sent = await db.mentorship_requests.find({"mentee_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
     received = await db.mentorship_requests.find({"mentor_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=100)
     # Enrich sent with mentor name
@@ -1738,7 +1750,7 @@ async def my_requests(user: User = Depends(current_user)):
 
 
 @api.patch("/mentorship/requests/{rid}")
-async def update_request(rid: str, action: str = Query(...), user: User = Depends(current_user)):
+async def update_request(rid: str, action: str = Query(...), user: User = Depends(require_member)):
     r = await db.mentorship_requests.find_one({"request_id": rid}, {"_id": 0})
     if not r:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -1818,7 +1830,7 @@ def _month_window(year: int, month: int):
 async def khidmah_leaderboard(
     year: Optional[int] = None,
     month: Optional[int] = None,
-    user: User = Depends(current_user),
+    user: User = Depends(require_member),
 ):
     now = datetime.now(timezone.utc)
     y = year or now.year
@@ -1972,7 +1984,7 @@ async def community_categories():
 
 
 @api.post("/communities")
-async def create_community(body: CommunityIn, user: User = Depends(current_user)):
+async def create_community(body: CommunityIn, user: User = Depends(require_member)):
     if body.category not in COMMUNITY_CATEGORIES:
         raise HTTPException(status_code=400, detail="Invalid category")
     name = body.name.strip()
@@ -2017,7 +2029,7 @@ def _is_community_mod(user: User, community: dict) -> bool:
 
 
 @api.get("/communities/{community_id}/moderation")
-async def community_mod_queue(community_id: str, user: User = Depends(current_user)):
+async def community_mod_queue(community_id: str, user: User = Depends(require_member)):
     comm = await db.communities.find_one({"community_id": community_id}, {"_id": 0})
     if not comm:
         raise HTTPException(status_code=404, detail="Community not found")
@@ -2066,14 +2078,14 @@ async def _notify(user_id: str, kind: str, title: str, body: str = "", link: Opt
 
 
 @api.get("/notifications")
-async def list_notifications(user: User = Depends(current_user)):
+async def list_notifications(user: User = Depends(require_member)):
     items = await db.notifications.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(length=80)
     unread = sum(1 for n in items if not n.get("read"))
     return {"notifications": items, "unread": unread}
 
 
 @api.post("/notifications/mark-read")
-async def mark_read(user: User = Depends(current_user)):
+async def mark_read(user: User = Depends(require_member)):
     await db.notifications.update_many({"user_id": user.user_id, "read": False}, {"$set": {"read": True}})
     return {"ok": True}
 
@@ -2382,7 +2394,7 @@ async def noor_year_mosaic(user: User = Depends(current_user)):
 
 
 @api.get("/noor/digest")
-async def noor_digest(user: User = Depends(current_user)):
+async def noor_digest(user: User = Depends(require_member)):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
     start, end, key = _week_window()
@@ -2507,12 +2519,12 @@ async def list_orgs(country: Optional[str] = None, category: Optional[str] = Non
 
 
 @api.get("/orgs/me")
-async def my_org(user: User = Depends(current_user)):
+async def my_org(user: User = Depends(require_member)):
     return {"role": user.role, "org_profile": user.org_profile}
 
 
 @api.post("/orgs/me")
-async def become_or_update_org(body: OrgProfileIn, user: User = Depends(current_user)):
+async def become_or_update_org(body: OrgProfileIn, user: User = Depends(require_member)):
     name = (body.name or "").strip()
     if len(name) < 3:
         raise HTTPException(status_code=400, detail="Organisation name is too short.")
@@ -2539,7 +2551,7 @@ async def become_or_update_org(body: OrgProfileIn, user: User = Depends(current_
 
 
 @api.delete("/orgs/me")
-async def retire_org(user: User = Depends(current_user)):
+async def retire_org(user: User = Depends(require_member)):
     await db.users.update_one(
         {"user_id": user.user_id},
         {"$set": {"role": "member", "org_profile": None}},
@@ -3023,8 +3035,57 @@ def _mp3_duration_ms(mp3_bytes: bytes) -> int:
         m = MP3(io.BytesIO(mp3_bytes))
         return int((m.info.length or 0) * 1000)
     except Exception:
-        # Fallback: assume 128 kbps CBR
         return int(len(mp3_bytes) * 8 / 128000 * 1000)
+
+
+def _strip_mp3_headers(chunk: bytes) -> bytes:
+    """Strip ID3v2 tag + Info/Xing CBR header frame from an ElevenLabs MP3 chunk.
+
+    ElevenLabs returns each chunk as a self-contained MP3 with:
+      - ID3v2 tag (10 + size bytes)
+      - One Info/Xing 'header frame' that lies about total duration
+      - Real audio frames
+
+    When we concatenate raw chunks naively, the player trusts the FIRST chunk's
+    Info header (which only describes its own duration) and stops/loops early.
+
+    The fix: emit only the raw audio frames from every chunk. The player then
+    treats the stream as headerless CBR and plays the whole thing through.
+    """
+    if not chunk:
+        return chunk
+    pos = 0
+    # Skip ID3v2 tag if present
+    if len(chunk) >= 10 and chunk[:3] == b"ID3":
+        tag_size = ((chunk[6] & 0x7F) << 21) | ((chunk[7] & 0x7F) << 14) | \
+                   ((chunk[8] & 0x7F) << 7) | (chunk[9] & 0x7F)
+        pos = 10 + tag_size
+    # The first MP3 frame after ID3 is the Info/Xing header — skip it too.
+    # An MP3 frame starts with 0xFFE (sync). Find the first sync.
+    while pos < len(chunk) - 1 and not (chunk[pos] == 0xFF and (chunk[pos + 1] & 0xE0) == 0xE0):
+        pos += 1
+    if pos >= len(chunk) - 4:
+        return chunk[pos:]
+    # Decode frame size from MPEG header to know where to skip to
+    header = chunk[pos:pos + 4]
+    version_id = (header[1] >> 3) & 0x03  # 11=MPEG1
+    layer = (header[1] >> 1) & 0x03        # 01=Layer3
+    bitrate_idx = (header[2] >> 4) & 0x0F
+    sr_idx = (header[2] >> 2) & 0x03
+    padding = (header[2] >> 1) & 0x01
+    # Bitrate table for MPEG1 Layer 3 (kbps)
+    bitrate_table = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0]
+    sr_table = [44100, 48000, 32000, 0]
+    if version_id == 3 and layer == 1 and 1 <= bitrate_idx <= 14 and sr_idx < 3:
+        bitrate = bitrate_table[bitrate_idx] * 1000
+        sr = sr_table[sr_idx]
+        frame_size = int(144 * bitrate / sr) + padding
+        # Verify this frame is the Info/Xing header by checking for "Info" or "Xing" tag inside
+        check_region = chunk[pos:pos + min(frame_size, 200)]
+        if b"Info" in check_region or b"Xing" in check_region:
+            # Skip this header frame too
+            pos += frame_size
+    return chunk[pos:]
 
 
 async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
@@ -3034,7 +3095,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline"):
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 2:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3055,13 +3116,16 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             cache_key = f"imam:{voice_key}:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
             seg_id = f"imam:{text}"
 
-        # Get or synthesize the segment MP3
         seg = await _synthesize_arabic_mp3(cache_key, text, voice_id)
         seg_ms = _mp3_duration_ms(seg)
         repeat = max(1, int(entry.get("repeat", 1)))
 
+        # Strip ID3v2 + Info-header frame from EVERY chunk so the concatenated
+        # stream is pure raw MPEG frames with no misleading duration metadata.
+        raw = _strip_mp3_headers(seg)
+
         for r in range(repeat):
-            chunks.append(seg)
+            chunks.append(raw)
             timeline.append({
                 "id": seg_id,
                 "kind": entry["kind"],
@@ -3084,6 +3148,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
+            "schema": 2,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
