@@ -1,0 +1,41 @@
+{
+  "summary": "Pre-audit regression sweep — Tasbih.ai. Backend: 19/19 pytest cases pass (test_audit_regression.py) covering master MP3 (male 342s, female 376s, both within tolerance), 162-segment timeline, mid-insert verses r5_09_qadeer_mid (≈198s male / 221s female) and r6_14_waghfir_mid (≈330s male / 369s female) both present, r6_11_mawlana_aly updated (title='Our Lord', translit='Allāhumma bi haqqi Mawlānā', english 'O Allah, in the name of our Lord.') with interlude_after.names = 50 imams preserved, Imam Tasbih TTS endpoint returns fresh audio for 'Mawlana al-Mustansir Billah' (cosmetic display name unchanged in /api/dua), all 5 new endpoints (GET/POST /dua/progress, GET/POST/DELETE /dua/bookmarks) gated by auth and not swallowed by /dua/{dua_id} catch-all route, bookmark idempotency works, 90-day session cookie code constant verified, member Bearer token authenticates /api/auth/me with status='member', guest mode blocked correctly (403) on /journal, /reminders, /communities/.../messages and unauthenticated (401) without token. Noor AI verified live via curl: returns suggested_dua={id:'r1_11_quwwati'...} for 'I feel exhausted and weak today' and strips the [DUA:...] marker from reply. Frontend smoke: /login flow correct (invite step → google-auth-form with 'Continue with Google' button, NO register-form, NO otp-form), /dua page renders with dua-page, dua-scroller, dua-play-all, voice toggle M/F, dua-bookmark-r1_01_bismillah, dua-share-r1_01_bismillah, dua-share-modal opens/closes, dua-interlude-recite-all present, dua-resume-pill correctly absent for fresh guest. Home page renders 'Install app' button at bottom (InstallAppButton with testId='home-install-app-btn'). Transient: one /api/noor/chat call returned 502 'Budget exceeded' during test run but recovered seconds later — flag for monitoring.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/noor/chat", "issue": "Observed transient 502 'litellm.BadRequestError: OpenAIException - Budget has been exceeded' during the sweep; subsequent calls returned 200 normally. Suggests Emergent LLM key budget is at/near ceiling. If launch traffic spikes, Noor will degrade to the 502 'Noor is resting' message."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_audit_regression.py",
+    "/app/test_reports/pytest/audit_results.xml"
+  ],
+  "action_items": [
+    "Monitor Emergent LLM key budget — observed at least one 502 from /api/noor/chat during the sweep (budget exceeded). Consider raising the ceiling or adding a graceful client-side fallback message before launch.",
+    "Cosmetic (not blocking): six DeprecationWarnings in server.py — `Query(... regex=...)` should be `pattern=...`, `@app.on_event('startup')` should migrate to FastAPI lifespan handlers, hijri-converter → hijridate."
+  ],
+  "critical_code_review_comments": [
+    "Route ordering in server.py is correct: /dua/progress and /dua/bookmarks (and /dua/bookmarks/{dua_id}) are declared BEFORE the catch-all /dua/{dua_id} so FastAPI matches them first. Verified by test_route_ordering_progress_and_bookmarks_not_swallowed_by_catchall.",
+    "_tts_normalize_imam_name() only rewrites the TTS payload — the /api/dua JSON keeps the display string with ' al-' intact (asserted).",
+    "_build_full_playlist() inserts the mid_insert MP3 segment immediately after its parent verse's first repeat — timeline confirms ordering and monotonic start_ms < end_ms across all 162 segments for both voices.",
+    "current_user() prefers the session_token cookie over the Authorization header. This is correct, but means a fresh requests.Session is needed in tests if you want to switch between guest and member tokens — documented in conftest-style _fresh_session helper.",
+    "InstallAppButton returns null until beforeinstallprompt fires (or iOS). Rendering on Home is conditional and works as designed — verified in screenshot. data-testid='home-install-app-btn' is set.",
+    "server.py is now 3737 lines — flagged again for maintainability, not blocking launch. Splitting into auth/dua/communities/noor modules would help.",
+    "elevenlabs cache schema bumped to v8 across both voices — master MP3 durations (male 342s±/female 376s±) match the documented expected values, confirming the rebuild was successful."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_audit_regression.py"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "100% on key smoke checks"},
+  "test_credentials": "Member session minted in-test via direct MongoDB insert per /app/memory/test_credentials.md. Guest session via POST /api/auth/guest. Founder invite codes RR43CLBG + 3TLB2RK4 used for /login flow smoke.",
+  "seed_data_creation": "Per-test member user (user_audit_*) and session_token cleaned up in fixture teardown. One bookmark created against r1_01_bismillah and deleted within the same test. dua_progress upserted for the audit user. No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suite for the launch sprint lives at /app/backend/tests/test_audit_regression.py — keep it green. It will catch: schema regression on master MP3 cache (duration tolerance windows), route-ordering regressions (catch-all /dua/{id} swallowing /dua/progress or /dua/bookmarks), missing mid_insert segments, accidental rename of the 50-imam interlude on r6_11_mawlana_aly, login UI re-introducing the WhatsApp OTP form, and Noor marker leakage. For Noor budget issues, check Emergent LLM key dashboard — observed 502 with 'Budget has been exceeded' once during this iteration. The login back link's testid is 'google-back' (not 'back-to-invite'). The mid-insert timeline shape returns {id:'r5_09_qadeer_mid', kind:'mid', start_ms, end_ms, slide_idx, repeat_index, repeat_total} — there is no separate parent_id field, the id itself ends in '_mid'.",
+  "rca of the issue": "No production bugs found. Noor 502 RCA: Emergent LLM monthly budget was momentarily exceeded (litellm.BadRequestError: Budget has been exceeded! Current cost: 212.27 / Max budget: 212.27). The condition is automatically reset after the next reconciliation — verified within ~30s the same endpoint returned 200 with proper suggested_dua and stripped marker. Mitigation: raise Emergent budget ceiling before launch or add user-facing graceful fallback ('Noor is taking a quiet breath, please try again') so the 502 doesn't surface as a raw error to the user."
+}

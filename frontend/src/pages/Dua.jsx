@@ -1021,6 +1021,12 @@ function DuaPageInner() {
         const seg = segs[hit];
         if (seg.kind === "verse") {
           setPlayingId((prev) => (prev === seg.id ? prev : seg.id));
+        } else if (seg.kind === "mid") {
+          // Mid-insert audio is part of its parent pair card. Highlight the
+          // PARENT verse (strip "_mid" suffix) so the user sees continuity
+          // rather than a blank "playing" indicator.
+          const parentId = seg.id.replace(/_mid$/, "");
+          setPlayingId((prev) => (prev === parentId ? prev : parentId));
         } else {
           setPlayingId(null);
         }
@@ -1145,6 +1151,24 @@ function DuaPageInner() {
     if (!currentSeg) return null;
     if (currentSeg.kind === "verse") return items.find((d) => d.id === currentSeg.id) || null;
     if (currentSeg.kind === "name") return { isImamName: true, name: currentSeg.id.replace(/^imam:/, "") };
+    if (currentSeg.kind === "mid") {
+      // Mid-insert lives as a sub-property on the parent verse. Reconstruct a
+      // verse-shaped object so the ambient overlay can render its Arabic +
+      // transliteration cleanly during playback.
+      const parentId = currentSeg.id.replace(/_mid$/, "");
+      const parent = items.find((d) => d.id === parentId);
+      const mi = parent?.mid_insert;
+      if (!mi) return parent || null;
+      return {
+        id: currentSeg.id,
+        title: mi.title || parent?.title,
+        transliteration: mi.transliteration,
+        arabic: mi.arabic,
+        english: mi.english,
+        rakaat: parent?.rakaat,
+        isMidInsert: true,
+      };
+    }
     return null;
   }, [currentSeg, items]);
   const fmtTime = (ms) => {
