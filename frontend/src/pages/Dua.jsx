@@ -1225,70 +1225,106 @@ export default function DuaPage() {
         </div>
       )}
 
-      {/* ── Sit with Du'a — ambient mode overlay ─────────────────── */}
+      {/* ── Sit with Du'a — premium ambient mode ─────────────────── */}
       {isAutoPlaying && ambientMode && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center"
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-hidden"
           data-testid="dua-ambient-overlay"
-          style={{ background: "linear-gradient(180deg, #050d10 0%, #0a1b1a 50%, #050d10 100%)" }}
+          style={{
+            background:
+              "radial-gradient(ellipse at 50% 35%, #102d28 0%, #051512 55%, #020807 100%)",
+          }}
         >
-          {/* Beautiful jamatkhana silhouette */}
+          {/* Cinematic jamatkhana silhouette (mobile-tuned, 800x420) */}
           <svg
-            viewBox="0 0 800 400"
+            viewBox="0 0 800 420"
             preserveAspectRatio="xMidYMax slice"
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-[58%] w-full"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-[64%] w-full"
             aria-hidden="true"
           >
             <defs>
               <linearGradient id="jkFade" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="rgba(232,195,106,0.0)" />
-                <stop offset="60%" stopColor="rgba(232,195,106,0.18)" />
-                <stop offset="100%" stopColor="rgba(232,195,106,0.32)" />
+                <stop offset="55%" stopColor="rgba(232,195,106,0.22)" />
+                <stop offset="100%" stopColor="rgba(232,195,106,0.42)" />
               </linearGradient>
               <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor="rgba(244,216,138,0.9)" />
-                <stop offset="60%" stopColor="rgba(244,216,138,0.15)" />
+                <stop offset="0%" stopColor="rgba(244,216,138,0.95)" />
+                <stop offset="50%" stopColor="rgba(244,216,138,0.22)" />
                 <stop offset="100%" stopColor="rgba(244,216,138,0)" />
               </radialGradient>
+              <radialGradient id="haze" cx="50%" cy="100%" r="50%">
+                <stop offset="0%" stopColor="rgba(232,195,106,0.18)" />
+                <stop offset="100%" stopColor="rgba(232,195,106,0)" />
+              </radialGradient>
             </defs>
-            {/* Moon */}
-            <circle cx="650" cy="80" r="32" fill="url(#moonGlow)" />
-            <circle cx="650" cy="80" r="14" fill="#F4D88A" opacity="0.85" />
-            {/* Stars */}
+
+            {/* Ground haze */}
+            <ellipse cx="400" cy="420" rx="450" ry="60" fill="url(#haze)" />
+
+            {/* Moon — breathing pulse */}
+            <circle cx="640" cy="80" r="50" fill="url(#moonGlow)">
+              <animate attributeName="r" values="48;58;48" dur="6s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.9;1;0.9" dur="6s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="640" cy="80" r="18" fill="#F4D88A" opacity="0.92" />
+
+            {/* Stars — subtle twinkles */}
             {[
-              [80, 60], [180, 110], [280, 50], [420, 90], [520, 140],
-              [120, 180], [340, 170], [600, 200], [720, 130], [40, 240],
-            ].map(([x, y], i) => (
-              <circle key={i} cx={x} cy={y} r={1.2 + (i % 3) * 0.4} fill="#F4D88A" opacity="0.55" />
+              [60, 50, 1.4], [180, 100, 1.0], [280, 35, 1.6], [420, 70, 1.2],
+              [520, 130, 1.4], [120, 170, 1.0], [340, 165, 1.5], [70, 220, 1.2],
+              [720, 140, 1.0], [40, 290, 1.4], [240, 260, 1.0], [780, 60, 1.2],
+            ].map(([x, y, r], i) => (
+              <circle key={i} cx={x} cy={y} r={r} fill="#F4D88A">
+                <animate attributeName="opacity" values="0.3;0.85;0.3" dur={`${3 + (i % 4)}s`} repeatCount="indefinite" begin={`${i * 0.4}s`} />
+              </circle>
             ))}
-            {/* Outer left minaret */}
-            <path d="M40,400 L40,210 Q44,200 44,194 Q44,182 40,176 Q36,182 36,194 Q36,200 40,210 Z M36,210 L44,210 L44,400 Z" fill="url(#jkFade)" />
-            <circle cx="40" cy="172" r="2.4" fill="#E8C36A" opacity="0.9" />
+
+            {/* Outer left minaret (tall, slim) */}
+            <path d="M40,420 L40,200 Q44,188 44,180 Q44,168 40,162 Q36,168 36,180 Q36,188 40,200 Z M35,200 L45,200 L45,420 Z" fill="url(#jkFade)" />
+            <circle cx="40" cy="158" r="3" fill="#E8C36A" opacity="0.95" />
+            <path d="M36,148 Q40,140 44,148" stroke="#E8C36A" strokeWidth="1.2" fill="none" opacity="0.85" />
+
             {/* Outer right minaret */}
-            <path d="M760,400 L760,210 Q764,200 764,194 Q764,182 760,176 Q756,182 756,194 Q756,200 760,210 Z M756,210 L764,210 L764,400 Z" fill="url(#jkFade)" />
-            <circle cx="760" cy="172" r="2.4" fill="#E8C36A" opacity="0.9" />
-            {/* Side wings */}
-            <path d="M90,400 L90,300 L200,300 L200,400 Z" fill="url(#jkFade)" />
-            <path d="M600,400 L600,300 L710,300 L710,400 Z" fill="url(#jkFade)" />
+            <path d="M760,420 L760,200 Q764,188 764,180 Q764,168 760,162 Q756,168 756,180 Q756,188 760,200 Z M755,200 L765,200 L765,420 Z" fill="url(#jkFade)" />
+            <circle cx="760" cy="158" r="3" fill="#E8C36A" opacity="0.95" />
+            <path d="M756,148 Q760,140 764,148" stroke="#E8C36A" strokeWidth="1.2" fill="none" opacity="0.85" />
+
+            {/* Side wing buildings */}
+            <path d="M80,420 L80,300 L190,300 L190,420 Z" fill="url(#jkFade)" />
+            <path d="M610,420 L610,300 L720,300 L720,420 Z" fill="url(#jkFade)" />
+            {/* Wing arched windows */}
+            <path d="M105,420 L105,360 Q105,340 115,340 Q125,340 125,360 L125,420 Z" fill="rgba(232,195,106,0.08)" />
+            <path d="M155,420 L155,360 Q155,340 165,340 Q175,340 175,360 L175,420 Z" fill="rgba(232,195,106,0.08)" />
+            <path d="M625,420 L625,360 Q625,340 635,340 Q645,340 645,360 L645,420 Z" fill="rgba(232,195,106,0.08)" />
+            <path d="M675,420 L675,360 Q675,340 685,340 Q695,340 695,360 L695,420 Z" fill="rgba(232,195,106,0.08)" />
+
             {/* Inner minarets */}
-            <path d="M220,400 L220,250 Q224,242 224,238 Q224,228 220,222 Q216,228 216,238 Q216,242 220,250 Z M216,250 L224,250 L224,400 Z" fill="url(#jkFade)" />
-            <path d="M580,400 L580,250 Q584,242 584,238 Q584,228 580,222 Q576,228 576,238 Q576,242 580,250 Z M576,250 L584,250 L584,400 Z" fill="url(#jkFade)" />
-            {/* Central dome + arch + sub-domes */}
-            <path d="M260,400 L260,260 Q260,180 400,168 Q540,180 540,260 L540,400 Z" fill="url(#jkFade)" />
-            {/* Crescent finial on central dome */}
-            <circle cx="400" cy="160" r="4" fill="#E8C36A" opacity="0.95" />
-            <path d="M396,148 Q400,140 404,148" stroke="#E8C36A" strokeWidth="1.4" fill="none" opacity="0.9" />
-            {/* Arched windows */}
-            <path d="M340,400 L340,330 Q340,300 360,300 Q380,300 380,330 L380,400 Z" fill="rgba(232,195,106,0.08)" />
-            <path d="M420,400 L420,330 Q420,300 440,300 Q460,300 460,330 L460,400 Z" fill="rgba(232,195,106,0.08)" />
-            {/* Two small flanking domes */}
-            <path d="M115,400 L115,322 Q115,290 145,288 Q175,290 175,322 L175,400 Z" fill="url(#jkFade)" />
-            <path d="M625,400 L625,322 Q625,290 655,288 Q685,290 685,322 L685,400 Z" fill="url(#jkFade)" />
+            <path d="M215,420 L215,240 Q219,230 219,224 Q219,214 215,210 Q211,214 211,224 Q211,230 215,240 Z M210,240 L220,240 L220,420 Z" fill="url(#jkFade)" />
+            <path d="M585,420 L585,240 Q589,230 589,224 Q589,214 585,210 Q581,214 581,224 Q581,230 585,240 Z M580,240 L590,240 L590,420 Z" fill="url(#jkFade)" />
+
+            {/* Central prayer hall + main dome — onion shape */}
+            <path d="M250,420 L250,290 Q250,170 400,158 Q550,170 550,290 L550,420 Z" fill="url(#jkFade)" />
+            {/* Onion dome refinement */}
+            <path d="M340,200 Q340,140 400,134 Q460,140 460,200" fill="rgba(232,195,106,0.28)" />
+            {/* Crescent finial */}
+            <line x1="400" y1="134" x2="400" y2="118" stroke="#E8C36A" strokeWidth="1.8" opacity="0.95" />
+            <path d="M392,108 Q397,98 405,104 Q400,116 392,108 Z" fill="#E8C36A" opacity="0.95" />
+
+            {/* Central arched entrance */}
+            <path d="M370,420 L370,330 Q370,300 400,300 Q430,300 430,330 L430,420 Z" fill="rgba(15,30,28,0.6)" />
+            <path d="M376,420 L376,332 Q376,306 400,306 Q424,306 424,332 L424,420 Z" fill="rgba(232,195,106,0.14)" />
+
+            {/* Flanking sub-domes */}
+            <path d="M280,420 L280,330 Q280,290 310,288 Q340,290 340,330 L340,420 Z" fill="url(#jkFade)" />
+            <path d="M460,420 L460,330 Q460,290 490,288 Q520,290 520,330 L520,420 Z" fill="url(#jkFade)" />
+            <circle cx="310" cy="282" r="1.8" fill="#E8C36A" opacity="0.85" />
+            <circle cx="490" cy="282" r="1.8" fill="#E8C36A" opacity="0.85" />
           </svg>
 
-          {/* Grain overlay */}
+          {/* Gentle grain */}
           <div
-            className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
+            className="pointer-events-none absolute inset-0 opacity-[0.07] mix-blend-overlay"
             style={{
               backgroundImage:
                 "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.6'/></svg>\")",
@@ -1296,7 +1332,7 @@ export default function DuaPage() {
           />
 
           {/* Top status row */}
-          <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 pt-7">
+          <div className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-[480px] items-center justify-between px-6 pt-7">
             <button
               type="button"
               onClick={() => setAmbientMode(false)}
@@ -1304,44 +1340,85 @@ export default function DuaPage() {
               aria-label="Show verse cards"
               className="flex h-10 items-center gap-1.5 rounded-full border border-ivory/15 bg-black/30 px-3 text-[10px] uppercase tracking-[0.22em] text-ivory/70 backdrop-blur-md tap-scale"
             >
+              <ListFilter className="h-3.5 w-3.5" />
               Cards
             </button>
-            <span
-              className="rounded-full border border-[#E8C36A]/40 bg-black/30 px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] text-[#E8C36A] backdrop-blur-md"
-            >
-              Rakaat {["", "I", "II", "III", "IV", "V", "VI"][currentRakaat]}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded-full border border-[#E8C36A]/40 bg-black/30 px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] text-[#E8C36A] backdrop-blur-md"
+              >
+                Rakaat {["", "I", "II", "III", "IV", "V", "VI"][currentRakaat]}
+              </span>
+              {fullSegIdx >= 0 && fullTimeline && (
+                <span
+                  className="rounded-full bg-black/30 px-3 py-1.5 text-[10px] tracking-widest text-ivory/55 backdrop-blur-md"
+                  data-testid="dua-ambient-seg-counter"
+                >
+                  {String(fullSegIdx + 1).padStart(2, "0")}<span className="text-ivory/35">/{fullTimeline.length}</span>
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Centre — current verse */}
-          <div className="relative z-10 mx-auto flex w-full max-w-[420px] flex-col items-center px-7 text-center text-ivory">
+          {/* Centre — current verse (larger, more breathing room) */}
+          <div className="relative z-10 mx-auto flex w-full max-w-[440px] flex-col items-center px-7 text-center text-ivory">
             {currentVerse?.isImamName ? (
               <>
-                <p className="text-[10px] uppercase tracking-[0.28em] text-[#E8C36A]">
-                  Tasbih of the Imams
+                <p className="text-[10px] uppercase tracking-[0.32em] text-[#E8C36A]">
+                  Tasbih · Light upon Light
                 </p>
+                <div className="mt-4 h-px w-10 bg-gradient-to-r from-transparent via-[#E8C36A] to-transparent" />
                 <h2
-                  className="mt-5 font-display leading-[1.18]"
-                  style={{ fontSize: "clamp(26px, 6.5vw, 38px)", textShadow: "0 2px 30px rgba(0,0,0,0.55)" }}
+                  className="mt-5 font-display leading-[1.15]"
+                  style={{
+                    fontSize: "clamp(28px, 7.2vw, 42px)",
+                    color: "#F4D88A",
+                    textShadow: "0 2px 32px rgba(232,195,106,0.45)",
+                    letterSpacing: "-0.005em",
+                  }}
                   data-testid="dua-ambient-title"
                 >
                   {currentVerse.name}
                 </h2>
+                <p className="mt-6 text-[12px] uppercase tracking-[0.28em] text-ivory/45">
+                  Whisper the name softly
+                </p>
               </>
             ) : currentVerse ? (
               <>
-                <p className="text-[10px] uppercase tracking-[0.28em] text-[#E8C36A]" data-testid="dua-ambient-title">
+                <p
+                  className="text-[10px] uppercase tracking-[0.32em] text-[#E8C36A]"
+                  data-testid="dua-ambient-title"
+                >
                   {currentVerse.title}
                 </p>
+                <div className="mt-4 h-px w-10 bg-gradient-to-r from-transparent via-[#E8C36A] to-transparent" />
+                {currentVerse.arabic && (
+                  <p
+                    dir="rtl"
+                    className="mt-5 leading-[1.85]"
+                    style={{
+                      fontFamily: "'Amiri', 'Scheherazade New', 'Noto Naskh Arabic', serif",
+                      fontSize: "clamp(22px, 5.8vw, 30px)",
+                      color: "#F4D88A",
+                      textShadow: "0 2px 24px rgba(232,195,106,0.4)",
+                    }}
+                    data-testid="dua-ambient-arabic"
+                  >
+                    {currentVerse.arabic}
+                  </p>
+                )}
                 <h2
-                  className="mt-5 font-display leading-[1.18]"
-                  style={{ fontSize: "clamp(24px, 6.2vw, 36px)", textShadow: "0 2px 30px rgba(0,0,0,0.55)" }}
+                  className="mt-4 font-display italic leading-[1.2]"
+                  style={{
+                    fontSize: "clamp(20px, 5.4vw, 28px)",
+                    textShadow: "0 2px 28px rgba(0,0,0,0.6)",
+                  }}
                 >
                   {currentVerse.transliteration}
                 </h2>
-                <div className="my-5 h-px w-12 bg-gradient-to-r from-transparent via-[#E8C36A] to-transparent" />
                 <p
-                  className="text-[14px] leading-relaxed text-ivory/80"
+                  className="mt-4 text-[13px] leading-relaxed text-ivory/75"
                   style={{ textShadow: "0 1px 16px rgba(0,0,0,0.45)" }}
                   data-testid="dua-ambient-english"
                 >
@@ -1354,40 +1431,91 @@ export default function DuaPage() {
           </div>
 
           {/* Bottom controls */}
-          <div className="absolute inset-x-0 bottom-0 z-10 px-7 pb-9">
-            {/* Progress bar with time labels */}
+          <div className="absolute inset-x-0 bottom-0 z-10 mx-auto max-w-[480px] px-7 pb-10">
+            {/* Premium scrubbable progress bar */}
             <div className="flex items-center gap-3 text-[10px] tracking-[0.18em] text-ivory/55">
               <span data-testid="dua-ambient-time-current">{fmtTime(fullCurrentMs)}</span>
-              <div className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-ivory/10">
+              <div
+                role="slider"
+                tabIndex={0}
+                aria-label="Seek through the Du'a"
+                aria-valuemin={0}
+                aria-valuemax={Math.floor(fullDurationMs / 1000)}
+                aria-valuenow={Math.floor(fullCurrentMs / 1000)}
+                data-testid="dua-ambient-seekbar"
+                onClick={(e) => {
+                  const el = audioRef.current;
+                  if (!el || !el.duration || !isFinite(el.duration)) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  el.currentTime = ratio * el.duration;
+                }}
+                onTouchEnd={(e) => {
+                  const el = audioRef.current;
+                  if (!el || !el.duration || !isFinite(el.duration)) return;
+                  const t = e.changedTouches[0];
+                  if (!t) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width));
+                  el.currentTime = ratio * el.duration;
+                }}
+                onKeyDown={(e) => {
+                  const el = audioRef.current;
+                  if (!el || !el.duration) return;
+                  if (e.key === "ArrowRight") { el.currentTime = Math.min(el.duration, el.currentTime + 5); }
+                  if (e.key === "ArrowLeft")  { el.currentTime = Math.max(0, el.currentTime - 5); }
+                  if (e.key === "Home")        { el.currentTime = 0; }
+                  if (e.key === "End")         { el.currentTime = el.duration; }
+                }}
+                className="relative h-8 flex-1 cursor-pointer touch-none"
+                style={{ WebkitTapHighlightColor: "transparent" }}
+              >
+                {/* Track */}
+                <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-ivory/10">
+                  <div
+                    className="h-full rounded-full transition-[width] duration-150 ease-linear"
+                    style={{
+                      width: `${Math.max(0, Math.min(1, audioProgress)) * 100}%`,
+                      background: "linear-gradient(90deg, #E8C36A 0%, #F4D88A 100%)",
+                      boxShadow: "0 0 22px rgba(232,195,106,0.75)",
+                    }}
+                  />
+                </div>
+                {/* Thumb */}
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{
-                    width: `${Math.max(0, Math.min(1, audioProgress)) * 100}%`,
-                    background: "linear-gradient(90deg, #E8C36A 0%, #F4D88A 100%)",
-                    boxShadow: "0 0 18px rgba(232,195,106,0.7)",
-                  }}
+                  className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#F4D88A] shadow-[0_0_16px_#F4D88A] transition-[left] duration-150 ease-linear"
+                  style={{ left: `${Math.max(0, Math.min(1, audioProgress)) * 100}%` }}
+                  aria-hidden="true"
                 />
               </div>
               <span data-testid="dua-ambient-time-total">{fmtTime(fullDurationMs)}</span>
             </div>
 
-            {/* Pause + voice + ambient hint */}
-            <div className="mt-6 flex items-center justify-center gap-4">
+            {/* Pause button — large, soft glow */}
+            <div className="mt-7 flex items-center justify-center">
               <button
                 type="button"
                 onClick={toggleAutoPlay}
                 data-testid="dua-ambient-pause"
                 aria-label="Pause"
-                className="flex h-14 w-14 items-center justify-center rounded-full text-deep shadow-[0_0_36px_rgba(232,195,106,0.55)] tap-scale"
-                style={{ background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)" }}
+                className="relative flex h-16 w-16 items-center justify-center rounded-full text-deep tap-scale"
+                style={{
+                  background: "linear-gradient(135deg, #F4D88A 0%, #E8C36A 100%)",
+                  boxShadow:
+                    "0 0 48px rgba(232,195,106,0.7), 0 8px 24px rgba(0,0,0,0.6)",
+                }}
               >
-                <Pause className="h-6 w-6" />
+                <span
+                  className="absolute inset-0 animate-ping rounded-full opacity-30"
+                  style={{ background: "rgba(244,216,138,0.5)" }}
+                />
+                <Pause className="relative h-6 w-6" />
               </button>
             </div>
-            <p className="mt-5 text-center text-[10px] uppercase tracking-[0.28em] text-ivory/40">
+            <p className="mt-5 text-center text-[10px] uppercase tracking-[0.32em] text-ivory/45">
               Sit · Listen · Breathe
             </p>
-            <p className="mt-1 text-center text-[10px] text-ivory/30">
+            <p className="mt-1 text-center text-[10px] italic text-ivory/30">
               Your screen will stay awake
             </p>
           </div>

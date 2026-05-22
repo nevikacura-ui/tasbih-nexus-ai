@@ -867,19 +867,36 @@ NOOR_SYSTEM_PROMPT = (
 )
 
 
+GUEST_NOOR_DAILY_LIMIT = 5
+
+
 @api.post("/noor/chat", response_model=NoorChatResponse)
 async def noor_chat(body: NoorChatRequest, user: User = Depends(current_user)):
+    # Daily rate limit for guests (encourages sign-up without blocking the taste)
+    if getattr(user, "status", None) == "guest":
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+        count = await db.noor_messages.count_documents({
+            "user_id": user.user_id,
+            "role": "user",
+            "day": today_iso,
+        })
+        if count >= GUEST_NOOR_DAILY_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=f"You've used your {GUEST_NOOR_DAILY_LIMIT} free Noor reflections today. Sign in to keep going gently.",
+            )
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
     session_id = body.session_id or f"noor_{user.user_id}_{uuid.uuid4().hex[:8]}"
 
-    # Persist user message
+    # Persist user message (with `day` field for guest rate-limiting)
     await db.noor_messages.insert_one({
         "session_id": session_id,
         "user_id": user.user_id,
         "role": "user",
         "text": body.message,
         "language": body.language or "en",
+        "day": datetime.now(timezone.utc).date().isoformat(),
         "created_at": datetime.now(timezone.utc),
     })
 

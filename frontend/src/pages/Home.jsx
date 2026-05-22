@@ -86,44 +86,131 @@ export default function HomePage() {
           </h1>
         </header>
 
-        {/* NOOR OF THE DAY hero */}
-        <section className="px-5 pt-5">
-          <div className="relative overflow-hidden rounded-[28px] shadow-elegant" data-testid="noor-of-day">
-            <div className="bg-emerald-gradient absolute inset-0" />
-            <div className="absolute -right-12 -top-12 h-56 w-56 rounded-full bg-gold/30 blur-3xl" />
-            <div className="absolute -bottom-16 -left-10 h-64 w-64 rounded-full bg-gold/15 blur-3xl" />
-            {/* Mosque silhouette */}
-            <svg className="absolute bottom-0 left-0 w-full opacity-[0.16]" viewBox="0 0 400 100" preserveAspectRatio="none">
-              <path d="M0 100 L0 60 L40 60 L40 40 Q60 20 80 40 L80 60 L120 60 L120 50 L160 50 L160 30 Q180 10 200 30 L200 50 L240 50 L240 60 L280 60 L280 40 Q300 20 320 40 L320 60 L360 60 L360 70 L400 70 L400 100 Z"
-                fill="#C9A46A"/>
+        {/* NOOR OF THE DAY · premium hero */}
+        <section className="px-5 pt-6" data-testid="noor-of-day-section">
+          <div
+            className="relative overflow-hidden rounded-[32px] shadow-elegant"
+            style={{
+              background:
+                "linear-gradient(155deg, #07241F 0%, #0F3D36 38%, #1a5a4e 72%, #0a2a24 100%)",
+            }}
+            data-testid="noor-of-day"
+          >
+            {/* Layered light, dust, depth */}
+            <div className="absolute -right-16 -top-20 h-72 w-72 rounded-full bg-[#E8C36A]/35 blur-[100px]" />
+            <div className="absolute -bottom-20 -left-12 h-72 w-72 rounded-full bg-[#E8C36A]/15 blur-[80px]" />
+            <div
+              className="pointer-events-none absolute inset-0 opacity-[0.07] mix-blend-overlay"
+              style={{
+                backgroundImage:
+                  "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.6'/></svg>\")",
+              }}
+            />
+            {/* Tiny stars */}
+            {[
+              [40, 28], [120, 50], [320, 38], [70, 92], [200, 16], [280, 110],
+            ].map(([x, y], i) => (
+              <span
+                key={i}
+                className="absolute h-[2px] w-[2px] rounded-full bg-[#F4D88A]/70"
+                style={{ left: `${x}px`, top: `${y}px`, boxShadow: "0 0 6px #F4D88A88" }}
+                aria-hidden="true"
+              />
+            ))}
+            {/* Refined jamatkhana silhouette */}
+            <svg
+              viewBox="0 0 400 120"
+              preserveAspectRatio="xMidYMax slice"
+              className="absolute inset-x-0 bottom-0 h-24 w-full opacity-[0.22]"
+              aria-hidden="true"
+            >
+              <defs>
+                <linearGradient id="nd-fade" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#E8C36A" stopOpacity="0" />
+                  <stop offset="100%" stopColor="#E8C36A" stopOpacity="0.8" />
+                </linearGradient>
+              </defs>
+              {/* Left + right minarets */}
+              <path d="M30,120 L30,52 Q33,46 33,42 Q33,34 30,30 Q27,34 27,42 Q27,46 30,52 Z M26,52 L34,52 L34,120 Z" fill="url(#nd-fade)" />
+              <path d="M370,120 L370,52 Q373,46 373,42 Q373,34 370,30 Q367,34 367,42 Q367,46 370,52 Z M366,52 L374,52 L374,120 Z" fill="url(#nd-fade)" />
+              {/* Side wings */}
+              <path d="M60,120 L60,86 L130,86 L130,120 Z M270,120 L270,86 L340,120 Z" fill="url(#nd-fade)" />
+              {/* Central dome + arch */}
+              <path d="M140,120 L140,82 Q140,46 200,40 Q260,46 260,82 L260,120 Z" fill="url(#nd-fade)" />
+              <circle cx="200" cy="36" r="2" fill="#E8C36A" opacity="0.9" />
+              {/* Flanking sub-domes */}
+              <path d="M85,120 L85,90 Q85,72 105,70 Q125,72 125,90 L125,120 Z" fill="url(#nd-fade)" />
+              <path d="M275,120 L275,90 Q275,72 295,70 Q315,72 315,90 L315,120 Z" fill="url(#nd-fade)" />
             </svg>
 
-            <div className="relative p-6 text-ivory">
-              <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-gold">
-                <Sparkles className="h-3.5 w-3.5" /> Noor of the Day
+            <div className="relative px-7 pb-7 pt-6 text-ivory">
+              {/* Eyebrow */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.28em] text-[#F4D88A]">
+                  <Sparkles className="h-3.5 w-3.5" /> Noor of the Day
+                </div>
+                <span className="text-[10px] uppercase tracking-[0.22em] text-ivory/45">
+                  {new Date().toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" })}
+                </span>
               </div>
+
+              {/* Arabic — large, golden, with subtle glow */}
               {noor?.verse_ar && (
-                <p className="mt-4 text-right text-base leading-relaxed text-gold/95" dir="rtl" style={{ fontFamily: "Fraunces, serif" }}>
+                <p
+                  dir="rtl"
+                  className="mt-7 text-right leading-[1.85]"
+                  style={{
+                    fontFamily: "'Amiri', 'Scheherazade New', 'Noto Naskh Arabic', serif",
+                    fontSize: "clamp(20px, 5.4vw, 28px)",
+                    color: "#F4D88A",
+                    textShadow: "0 2px 20px rgba(232,195,106,0.35)",
+                  }}
+                  data-testid="noor-arabic"
+                >
                   {noor.verse_ar}
                 </p>
               )}
-              <p className="mt-3 font-display text-[19px] leading-snug">
+
+              {/* Gold rule */}
+              <div className="my-5 flex items-center gap-3" aria-hidden="true">
+                <div className="h-px flex-1" style={{ background: "linear-gradient(90deg, transparent 0%, rgba(232,195,106,0.6) 50%, transparent 100%)" }} />
+                <span className="text-[8px] uppercase tracking-[0.32em] text-[#E8C36A]/65">verse</span>
+                <div className="h-px flex-1" style={{ background: "linear-gradient(90deg, transparent 0%, rgba(232,195,106,0.6) 50%, transparent 100%)" }} />
+              </div>
+
+              {/* English — display serif */}
+              <p
+                className="font-display leading-[1.28]"
+                style={{ fontSize: "clamp(20px, 5.6vw, 26px)", textShadow: "0 2px 18px rgba(0,0,0,0.35)" }}
+                data-testid="noor-english"
+              >
                 {noor?.verse_en || "Loading reflection…"}
               </p>
-              <p className="mt-2 text-xs text-ivory/70">{noor?.ref}</p>
+              <p className="mt-2 text-[11px] tracking-wide text-[#E8C36A]/75">{noor?.ref}</p>
 
-              <div className="glass-dark mt-5 rounded-2xl p-3.5">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-gold">AI Reflection</p>
-                <p className="mt-1.5 text-sm text-ivory/90">{noor?.reflection}</p>
+              {/* Reflection — glass card */}
+              <div
+                className="mt-6 rounded-2xl border border-[#E8C36A]/20 bg-black/30 p-4 backdrop-blur-md"
+                data-testid="noor-reflection"
+              >
+                <p className="text-[10px] uppercase tracking-[0.28em] text-[#F4D88A]">
+                  AI Reflection
+                </p>
+                <p className="mt-2 text-[14px] leading-relaxed text-ivory/90">
+                  {noor?.reflection || "A gentle thought is on its way."}
+                </p>
                 <Link
                   to="/noor"
                   data-testid="reflect-now-cta"
-                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-gold tap-scale"
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#E8C36A]/40 bg-[#E8C36A]/10 px-4 py-2 text-xs font-medium text-[#F4D88A] backdrop-blur-md tap-scale"
                 >
-                  Reflect with Noor <ArrowRight className="h-3.5 w-3.5" />
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Reflect with Noor
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
-              <p className="mt-3 text-[10px] text-ivory/45">
+
+              <p className="mt-4 text-center text-[10px] italic text-ivory/40">
                 Noor is a reflective companion, not a religious authority.
               </p>
             </div>

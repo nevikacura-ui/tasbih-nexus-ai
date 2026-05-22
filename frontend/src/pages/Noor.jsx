@@ -63,7 +63,11 @@ export default function NoorPage() {
         });
       }
     } catch (e) {
-      setMessages((m) => [...m, { role: "noor", text: "Noor is resting for a moment. Please try once more." }]);
+      const status = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      let msg = "Noor is resting for a moment. Please try once more.";
+      if (status === 429 && detail) msg = detail; // Guest daily limit
+      setMessages((m) => [...m, { role: "noor", text: msg, isLimit: status === 429 }]);
     } finally {
       setBusy(false);
     }
