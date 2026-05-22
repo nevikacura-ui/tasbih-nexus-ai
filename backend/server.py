@@ -2860,6 +2860,107 @@ async def get_dua(dua_id: str):
     raise HTTPException(status_code=404, detail="Dua not found")
 
 
+# ── ElevenLabs · Authentic Arabic recitation for Dua + Tasbih ─────────
+_ELEVEN_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+_ELEVEN_VOICES = {
+    "male": os.environ.get("ELEVENLABS_VOICE_ID", "G1HOkzin3NMwRHSq60UI"),
+    "female": os.environ.get("ELEVENLABS_VOICE_FEMALE_ID", "isQLuoVuANx6FjDxyasX"),
+}
+_ELEVEN_MODEL = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+_ELEVEN_CLIENT = None
+
+
+def _eleven_client():
+    global _ELEVEN_CLIENT
+    if _ELEVEN_CLIENT is None and _ELEVEN_KEY:
+        from elevenlabs import ElevenLabs  # lazy import
+        _ELEVEN_CLIENT = ElevenLabs(api_key=_ELEVEN_KEY)
+    return _ELEVEN_CLIENT
+
+
+def _resolve_voice(voice: str) -> tuple[str, str]:
+    """Return (voice_key, voice_id). Defaults to male if unknown."""
+    key = (voice or "male").lower()
+    if key not in _ELEVEN_VOICES:
+        key = "male"
+    return key, _ELEVEN_VOICES[key]
+
+
+async def _synthesize_arabic_mp3(cache_key: str, text: str, voice_id: str) -> bytes:
+    """Generate Arabic MP3, cache by cache_key in MongoDB. Idempotent per voice."""
+    if not text or not text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+    cached = await db.dua_audio_cache.find_one({"_id": cache_key}, {"audio": 1})
+    if cached and cached.get("audio"):
+        return cached["audio"]
+    client = _eleven_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="ElevenLabs not configured")
+    try:
+        gen = client.text_to_speech.convert(
+            text=text,
+            voice_id=voice_id,
+            model_id=_ELEVEN_MODEL,
+            output_format="mp3_44100_128",
+        )
+        audio = b"".join(chunk for chunk in gen if chunk)
+    except Exception as e:
+        logger.error(f"ElevenLabs TTS failed for {cache_key}: {e}")
+        raise HTTPException(status_code=502, detail="Audio synthesis failed")
+    if not audio:
+        raise HTTPException(status_code=502, detail="Empty audio")
+    await db.dua_audio_cache.update_one(
+        {"_id": cache_key},
+        {"$set": {
+            "audio": audio,
+            "voice_id": voice_id,
+            "model_id": _ELEVEN_MODEL,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "bytes": len(audio),
+        }},
+        upsert=True,
+    )
+    return audio
+
+
+@api.get("/dua/{dua_id}/audio")
+async def get_dua_audio(dua_id: str, voice: str = Query("male", regex="^(male|female)$")):
+    """Stream authentic Arabic recitation of a single Du'a verse (cached per voice)."""
+    dua = next((d for d in DUA if d.get("id") == dua_id), None)
+    if not dua:
+        raise HTTPException(status_code=404, detail="Dua not found")
+    arabic = dua.get("arabic") or ""
+    voice_key, voice_id = _resolve_voice(voice)
+    audio = await _synthesize_arabic_mp3(f"dua:{voice_key}:{dua_id}", arabic, voice_id)
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Content-Disposition": f'inline; filename="{dua_id}.{voice_key}.mp3"',
+        },
+    )
+
+
+@api.get("/tasbih-name/audio")
+async def get_tasbih_name_audio(
+    name: str = Query(..., min_length=1, max_length=200),
+    voice: str = Query("male", regex="^(male|female)$"),
+):
+    """Stream recitation of a single Imam name (cached by name + voice)."""
+    import hashlib
+    voice_key, voice_id = _resolve_voice(voice)
+    key = f"imam:{voice_key}:" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:16]
+    audio = await _synthesize_arabic_mp3(key, name, voice_id)
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
+
+
 @api.get("/family-corner")
 async def family_corner(stage: Optional[str] = None):
     items = list(FAMILY_CORNER)

@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check } from "lucide-react";
+import { ChevronLeft, Sparkles, Heart, Languages, ListFilter, X, Home, Check, Play, Pause, Repeat } from "lucide-react";
 import { api } from "../lib/api";
+
+const API_BASE = process.env.REACT_APP_BACKEND_URL;
 
 // Cinematic palette per rakaat — mosque-silhouette inspired gradients.
 const RAKAAT_THEMES = {
@@ -48,49 +50,82 @@ const GrainTexture = () => (
   />
 );
 
-function DuaHalf({ item, accent, onTapArabic, half }) {
+function DuaHalf({ item, accent, onTapArabic, onPlay, isPlaying, isLoading }) {
   return (
-    <button
-      type="button"
-      onClick={() => onTapArabic(item)}
+    <div
       data-testid={`dua-half-${item.id}`}
-      className="group relative flex flex-1 flex-col justify-center text-left transition-all tap-scale"
+      className="group relative flex flex-1 flex-col justify-center"
     >
-      <p
-        className="text-[10px] uppercase tracking-[0.22em]"
-        style={{ color: accent }}
+      <button
+        type="button"
+        onClick={() => onTapArabic(item)}
+        className="flex flex-1 flex-col justify-center text-left transition-all tap-scale"
       >
-        {item.title}
-      </p>
-      <h2
-        className="mt-2 font-display leading-[1.15] text-ivory"
-        style={{
-          fontSize: "clamp(22px, 5.6vw, 32px)",
-          textShadow: "0 2px 24px rgba(0,0,0,0.4)",
-          letterSpacing: "-0.005em",
-        }}
-        data-testid={`dua-translit-${item.id}`}
-      >
-        {item.transliteration}
-      </h2>
-      <div
-        className="mt-3 h-px w-10"
-        style={{ background: `linear-gradient(90deg, ${accent} 0%, transparent 100%)` }}
-      />
-      <p
-        className="mt-3 text-[13px] leading-relaxed text-ivory/80"
-        style={{ textShadow: "0 1px 12px rgba(0,0,0,0.3)" }}
-        data-testid={`dua-english-${item.id}`}
-      >
-        {item.english}
-      </p>
-      <span
-        className="mt-3 inline-flex w-fit items-center gap-1.5 text-[10px] text-ivory/55 opacity-0 transition-opacity group-hover:opacity-100"
-      >
-        <Languages className="h-3 w-3" />
-        Tap for Arabic
-      </span>
-    </button>
+        <p
+          className="text-[10px] uppercase tracking-[0.22em]"
+          style={{ color: accent }}
+        >
+          {item.title}
+        </p>
+        <h2
+          className="mt-2 font-display leading-[1.15] text-ivory"
+          style={{
+            fontSize: "clamp(22px, 5.6vw, 32px)",
+            textShadow: "0 2px 24px rgba(0,0,0,0.4)",
+            letterSpacing: "-0.005em",
+          }}
+          data-testid={`dua-translit-${item.id}`}
+        >
+          {item.transliteration}
+        </h2>
+        <div
+          className="mt-3 h-px w-10"
+          style={{ background: `linear-gradient(90deg, ${accent} 0%, transparent 100%)` }}
+        />
+        <p
+          className="mt-3 text-[13px] leading-relaxed text-ivory/80"
+          style={{ textShadow: "0 1px 12px rgba(0,0,0,0.3)" }}
+          data-testid={`dua-english-${item.id}`}
+        >
+          {item.english}
+        </p>
+      </button>
+
+      {/* Inline play + Arabic hint row */}
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPlay(item); }}
+          data-testid={`dua-play-${item.id}`}
+          aria-label={isPlaying ? "Pause recitation" : "Play Arabic recitation"}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all tap-scale"
+          style={{
+            background: isPlaying ? accent : "rgba(255,255,255,0.08)",
+            border: `1px solid ${isPlaying ? accent : "rgba(255,255,255,0.18)"}`,
+            color: isPlaying ? "#0F3D36" : "#F7F3EC",
+          }}
+        >
+          {isLoading ? (
+            <span
+              className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"
+            />
+          ) : isPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4 translate-x-[1px]" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => onTapArabic(item)}
+          className="inline-flex items-center gap-1.5 text-[10px] text-ivory/55 tap-scale"
+        >
+          <Languages className="h-3 w-3" />
+          Tap for Arabic
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -121,9 +156,16 @@ function MidInsert({ insert, accent }) {
   );
 }
 
-function ImamListInterlude({ data, index, total, rakaat }) {
+function ImamListInterlude({ data, index, total, rakaat, autoAdvance, onComplete, voice }) {
   const theme = RAKAAT_THEMES[rakaat] || RAKAAT_THEMES[6];
   const [recited, setRecited] = useState(() => new Set());
+  const [playingIdx, setPlayingIdx] = useState(null); // index of name being recited
+  const audioRef = useRef(null);
+  const cancelRef = useRef(false);
+  if (!audioRef.current && typeof window !== "undefined") {
+    audioRef.current = new Audio();
+    audioRef.current.preload = "auto";
+  }
 
   const toggle = (i) => {
     setRecited((prev) => {
@@ -137,6 +179,61 @@ function ImamListInterlude({ data, index, total, rakaat }) {
 
   const total_names = data.names?.length || 0;
   const done = recited.size;
+
+  const stopRecite = useCallback(() => {
+    cancelRef.current = true;
+    const el = audioRef.current;
+    if (el) { try { el.pause(); el.currentTime = 0; } catch (e) { /* ignore */ } }
+    setPlayingIdx(null);
+  }, []);
+
+  // Play a name and wait for it to finish (returns a promise)
+  const playOne = (name) => {
+    return new Promise((resolve) => {
+      const el = audioRef.current;
+      if (!el) { resolve(); return; }
+      el.onended = () => resolve();
+      el.onerror = () => resolve();
+      el.src = `${API_BASE}/api/tasbih-name/audio?name=${encodeURIComponent(name)}&voice=${voice || "male"}`;
+      el.play().catch(() => resolve());
+    });
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const reciteAll = async () => {
+    if (playingIdx !== null) { stopRecite(); return; }
+    cancelRef.current = false;
+    for (let i = 0; i < total_names; i++) {
+      if (cancelRef.current) break;
+      setPlayingIdx(i);
+      // Scroll the name into view inside the list
+      const node = document.querySelector(`[data-testid="dua-imam-tick-${i + 1}"]`);
+      if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
+      await playOne(data.names[i]);
+      if (cancelRef.current) break;
+      setRecited((prev) => {
+        const next = new Set(prev);
+        next.add(i);
+        return next;
+      });
+      await sleep(400); // gentle pause between names
+    }
+    setPlayingIdx(null);
+    if (!cancelRef.current && autoAdvance && typeof onComplete === "function") {
+      setTimeout(() => onComplete(), 700);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      cancelRef.current = true;
+      const el = audioRef.current;
+      if (el) { try { el.pause(); } catch (e) { /* ignore */ } }
+    };
+  }, []);
+
+  const isReciting = playingIdx !== null;
 
   return (
     <section
@@ -177,16 +274,33 @@ function ImamListInterlude({ data, index, total, rakaat }) {
           <p className="text-[11px]" style={{ color: theme.accent }}>
             <span data-testid="dua-interlude-progress">{done}</span> / {total_names} recited
           </p>
-          {done > 0 && (
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={reset}
-              data-testid="dua-interlude-reset"
-              className="text-[10px] uppercase tracking-[0.22em] text-ivory/60 underline-offset-2 hover:underline tap-scale"
+              onClick={reciteAll}
+              data-testid="dua-interlude-recite-all"
+              aria-label={isReciting ? "Stop recitation" : "Recite all 50 names"}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] transition-all tap-scale"
+              style={{
+                background: isReciting ? theme.accent : `${theme.accent}22`,
+                color: isReciting ? "#0F3D36" : theme.accent,
+                border: `1px solid ${theme.accent}55`,
+              }}
             >
-              Reset
+              {isReciting ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+              {isReciting ? "Stop" : "Recite all"}
             </button>
-          )}
+            {done > 0 && (
+              <button
+                type="button"
+                onClick={reset}
+                data-testid="dua-interlude-reset"
+                className="text-[10px] uppercase tracking-[0.22em] text-ivory/60 underline-offset-2 hover:underline tap-scale"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-2 h-px w-full bg-ivory/10 px-1">
           <div
@@ -205,6 +319,7 @@ function ImamListInterlude({ data, index, total, rakaat }) {
           {(data.names || []).map((n, i) => {
             const isLast = i === total_names - 1;
             const ticked = recited.has(i);
+            const isActive = playingIdx === i;
             return (
               <li key={`${n}-${i}`}>
                 <button
@@ -212,10 +327,16 @@ function ImamListInterlude({ data, index, total, rakaat }) {
                   onClick={() => toggle(i)}
                   data-testid={`dua-imam-tick-${i + 1}`}
                   className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-all tap-scale ${
-                    isLast ? "border" : ""
-                  }`}
+                    isActive ? "scale-[1.02]" : ""
+                  } ${isLast || isActive ? "border" : ""}`}
                   style={
-                    isLast
+                    isActive
+                      ? {
+                          background: `linear-gradient(135deg, ${theme.accent}33 0%, ${theme.accent}1a 100%)`,
+                          borderColor: theme.accent,
+                          boxShadow: `0 0 24px ${theme.accent}55`,
+                        }
+                      : isLast
                       ? {
                           background: "linear-gradient(135deg, rgba(232,195,106,0.16) 0%, rgba(244,216,138,0.06) 100%)",
                           borderColor: "rgba(232,195,106,0.45)",
@@ -225,15 +346,15 @@ function ImamListInterlude({ data, index, total, rakaat }) {
                 >
                   <span
                     className="w-7 shrink-0 text-right text-[10px] tracking-widest"
-                    style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.4)" }}
+                    style={{ color: isActive || isLast ? "#F4D88A" : "rgba(247,243,236,0.4)" }}
                   >
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span
                     className={`flex-1 leading-snug ${
-                      isLast ? "font-display text-[14px]" : "text-[13px]"
-                    } ${ticked ? "line-through opacity-50" : ""}`}
-                    style={{ color: isLast ? "#F4D88A" : "rgba(247,243,236,0.92)" }}
+                      isLast || isActive ? "font-display text-[14px]" : "text-[13px]"
+                    } ${ticked && !isActive ? "line-through opacity-50" : ""}`}
+                    style={{ color: isActive ? "#F7F3EC" : isLast ? "#F4D88A" : "rgba(247,243,236,0.92)" }}
                   >
                     {n}
                   </span>
@@ -244,11 +365,16 @@ function ImamListInterlude({ data, index, total, rakaat }) {
                     style={
                       ticked
                         ? { background: theme.accent, borderColor: theme.accent }
+                        : isActive
+                        ? { background: "transparent", borderColor: theme.accent }
                         : { background: "transparent" }
                     }
                     aria-hidden="true"
                   >
                     {ticked && <Check className="h-3 w-3 text-deep" strokeWidth={3} />}
+                    {!ticked && isActive && (
+                      <span className="h-2 w-2 animate-pulse rounded-full" style={{ background: theme.accent }} />
+                    )}
                   </span>
                 </button>
               </li>
@@ -270,7 +396,7 @@ function ImamListInterlude({ data, index, total, rakaat }) {
   );
 }
 
-function DuaPairCard({ pair, index, total, onTapArabic }) {
+function DuaPairCard({ pair, index, total, onTapArabic, onPlay, playingId, loadingId }) {
   const theme = RAKAAT_THEMES[pair[0].rakaat] || RAKAAT_THEMES[1];
   const [a, b] = pair;
   const insert = a.mid_insert && a.mid_insert.kind === "verse" ? a.mid_insert : null;
@@ -300,7 +426,14 @@ function DuaPairCard({ pair, index, total, onTapArabic }) {
 
         {/* Pair body */}
         <div className="mt-6 flex flex-1 flex-col">
-          <DuaHalf item={a} accent={theme.accent} onTapArabic={onTapArabic} half="top" />
+          <DuaHalf
+            item={a}
+            accent={theme.accent}
+            onTapArabic={onTapArabic}
+            onPlay={onPlay}
+            isPlaying={playingId === a.id}
+            isLoading={loadingId === a.id}
+          />
 
           {/* Mid insert (between the two duas) */}
           {insert ? (
@@ -321,7 +454,16 @@ function DuaPairCard({ pair, index, total, onTapArabic }) {
             )
           )}
 
-          {b && <DuaHalf item={b} accent={theme.accent} onTapArabic={onTapArabic} half="bottom" />}
+          {b && (
+            <DuaHalf
+              item={b}
+              accent={theme.accent}
+              onTapArabic={onTapArabic}
+              onPlay={onPlay}
+              isPlaying={playingId === b.id}
+              isLoading={loadingId === b.id}
+            />
+          )}
         </div>
 
         {/* Footer counter */}
@@ -349,7 +491,25 @@ export default function DuaPage() {
   const [arabicOpen, setArabicOpen] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [currentRakaat, setCurrentRakaat] = useState(1);
+  const [playingId, setPlayingId] = useState(null);
+  const [loadingId, setLoadingId] = useState(null);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const [voice, setVoice] = useState(() => {
+    if (typeof window === "undefined") return "male";
+    return localStorage.getItem("dua.voice") || "male";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("dua.voice", voice); } catch (e) { /* ignore */ }
+  }, [voice]);
   const scrollerRef = useRef(null);
+  const audioRef = useRef(null);
+  const autoAdvanceRef = useRef(false);
+  // Lazy-create the single shared <audio> element
+  if (!audioRef.current && typeof window !== "undefined") {
+    audioRef.current = new Audio();
+    audioRef.current.preload = "auto";
+  }
+  useEffect(() => { autoAdvanceRef.current = autoAdvance; }, [autoAdvance]);
 
   useEffect(() => {
     (async () => {
@@ -367,6 +527,52 @@ export default function DuaPage() {
       }
     })();
   }, []);
+
+  // ── Audio playback ─────────────────────────────────────────────
+  const stopAudio = useCallback(() => {
+    const el = audioRef.current;
+    if (el) {
+      try { el.pause(); el.currentTime = 0; } catch (e) { /* ignore */ }
+    }
+    setPlayingId(null);
+    setLoadingId(null);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) { try { el.pause(); } catch (e) { /* ignore */ } }
+    };
+  }, []);
+
+  const scrollToNext = useCallback(() => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+    sc.scrollBy({ top: sc.clientHeight, behavior: "smooth" });
+  }, []);
+
+  const playDua = useCallback((dua) => {
+    const el = audioRef.current;
+    if (!el) return;
+    // Toggle off if already playing same verse
+    if (playingId === dua.id) { stopAudio(); return; }
+    el.pause();
+    setLoadingId(dua.id);
+    setPlayingId(null);
+    const url = `${API_BASE}/api/dua/${dua.id}/audio?voice=${voice}`;
+    el.src = url;
+    el.onended = () => {
+      setPlayingId(null);
+      if (autoAdvanceRef.current) {
+        // gentle pause, then auto-scroll to next
+        setTimeout(() => { scrollToNext(); }, 900);
+      }
+    };
+    el.onerror = () => { setPlayingId(null); setLoadingId(null); };
+    el.onplaying = () => { setLoadingId(null); setPlayingId(dua.id); };
+    el.play().catch((e) => { setLoadingId(null); setPlayingId(null); console.warn("audio play failed", e); });
+  }, [playingId, stopAudio, scrollToNext, voice]);
 
   // Build slides: pairs of duas, plus dedicated interlude slides where requested.
   // A dua with `interlude_after` becomes a solo card and the interlude follows it.
@@ -453,12 +659,70 @@ export default function DuaPage() {
           <ChevronLeft className="h-4 w-4" />
         </Link>
         <div className="pointer-events-auto flex items-center gap-2">
+          {/* Voice picker */}
+          <div
+            className="flex h-9 items-center overflow-hidden rounded-full border backdrop-blur-md"
+            style={{ background: "rgba(0,0,0,0.35)", borderColor: `${activeTheme.accent}44` }}
+            data-testid="dua-voice-picker"
+            role="group"
+            aria-label="Reciter voice"
+          >
+            <button
+              type="button"
+              onClick={() => { if (voice !== "male") { stopAudio(); setVoice("male"); } }}
+              data-testid="dua-voice-male"
+              aria-pressed={voice === "male"}
+              className="flex h-full items-center px-3 text-[10px] uppercase tracking-[0.18em] tap-scale"
+              style={{
+                background: voice === "male" ? activeTheme.accent : "transparent",
+                color: voice === "male" ? "#0F3D36" : "rgba(247,243,236,0.7)",
+                fontWeight: voice === "male" ? 600 : 400,
+              }}
+            >
+              M
+            </button>
+            <span className="h-5 w-px" style={{ background: `${activeTheme.accent}33` }} aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => { if (voice !== "female") { stopAudio(); setVoice("female"); } }}
+              data-testid="dua-voice-female"
+              aria-pressed={voice === "female"}
+              className="flex h-full items-center px-3 text-[10px] uppercase tracking-[0.18em] tap-scale"
+              style={{
+                background: voice === "female" ? activeTheme.accent : "transparent",
+                color: voice === "female" ? "#0F3D36" : "rgba(247,243,236,0.7)",
+                fontWeight: voice === "female" ? 600 : 400,
+              }}
+            >
+              F
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !autoAdvance;
+              setAutoAdvance(next);
+              if (!next) stopAudio();
+            }}
+            data-testid="dua-auto-advance"
+            aria-pressed={autoAdvance}
+            aria-label={autoAdvance ? "Disable auto-advance" : "Enable auto-advance"}
+            className="flex h-9 items-center gap-1.5 rounded-full border px-3 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md transition-all tap-scale"
+            style={{
+              background: autoAdvance ? activeTheme.accent : "rgba(0,0,0,0.35)",
+              borderColor: autoAdvance ? activeTheme.accent : `${activeTheme.accent}44`,
+              color: autoAdvance ? "#0F3D36" : "rgba(247,243,236,0.85)",
+            }}
+          >
+            <Repeat className="h-3.5 w-3.5" />
+            {autoAdvance ? "Auto" : "Manual"}
+          </button>
           <div
             className="rounded-full border px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] backdrop-blur-md"
             style={{ background: "rgba(0,0,0,0.35)", borderColor: `${activeTheme.accent}55`, color: activeTheme.accent }}
             data-testid="dua-current-rakaat"
           >
-            Rakaat {["", "I", "II", "III", "IV", "V", "VI"][currentRakaat]}
+            {["", "I", "II", "III", "IV", "V", "VI"][currentRakaat]}
           </div>
         </div>
       </header>
@@ -493,6 +757,9 @@ export default function DuaPage() {
                     index={idx}
                     total={slides.length}
                     onTapArabic={setArabicOpen}
+                    onPlay={playDua}
+                    playingId={playingId}
+                    loadingId={loadingId}
                   />
                 ) : (
                   <ImamListInterlude
@@ -500,6 +767,9 @@ export default function DuaPage() {
                     index={idx}
                     total={slides.length}
                     rakaat={slide.rakaat}
+                    autoAdvance={autoAdvance}
+                    voice={voice}
+                    onComplete={() => { if (autoAdvanceRef.current) setTimeout(scrollToNext, 900); }}
                   />
                 )}
               </div>
