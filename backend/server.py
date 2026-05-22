@@ -3225,7 +3225,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
     Returns (mp3_bytes, timeline).
     """
     cached = await db.dua_full_audio_cache.find_one({"_id": voice_key})
-    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 5:
+    if cached and cached.get("audio") and cached.get("timeline") and cached.get("schema", 0) >= 6:
         return cached["audio"], cached["timeline"]
 
     voice_id = _ELEVEN_VOICES.get(voice_key, _ELEVEN_VOICES["male"])
@@ -3237,9 +3237,11 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
 
     # Pre-computed silence: 4 MP3 frames at 128 kbps / 44.1 kHz ≈ 104 ms of silence.
     # Frame size = floor(144 * 128000 / 44100) + padding(0) = 417 bytes exactly.
-    # Header `\xff\xfb\x90\x44` = sync + MPEG1 + Layer3 + protected + 128 kbps + 44.1 kHz + no padding + Stereo.
+    # Header `\xff\xfb\x90\xc4` = sync + MPEG1 + Layer3 + protected + 128 kbps + 44.1 kHz + no padding + MONO.
+    # ElevenLabs returns MONO frames; the silence MUST also be MONO or the decoder bails
+    # at the first segment boundary (this caused the player to stop right at the start).
     # We use real silent frames so the player doesn't pop or lose sync at segment boundaries.
-    SILENCE_FRAME = b"\xff\xfb\x90\x44" + b"\x00" * 413  # total exactly 417 bytes
+    SILENCE_FRAME = b"\xff\xfb\x90\xc4" + b"\x00" * 413  # total exactly 417 bytes, MONO
     SILENCE_MS_PER_FRAME = 26.122  # 1152 samples / 44100 Hz
     GAP_FRAMES = 4  # ~104 ms of silence between regular verses
     GAP_BYTES = SILENCE_FRAME * GAP_FRAMES
@@ -3301,7 +3303,7 @@ async def _build_full_dua_audio(voice_key: str) -> tuple[bytes, list[dict]]:
             "bytes": len(full),
             "duration_ms": cur_ms,
             "segments": len(timeline),
-            "schema": 5,
+            "schema": 6,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }},
         upsert=True,
