@@ -8,6 +8,7 @@ import { ShareTasbihButton } from "../components/ShareTasbihButton";
 import { RamadanCard } from "./Quran";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
+import { nextPrayer, formatGap } from "../lib/prayerTimes";
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -18,6 +19,15 @@ export default function HomePage() {
   const [unread, setUnread] = useState(0);
   const [nextEvent, setNextEvent] = useState(null);
   const [todayCal, setTodayCal] = useState(null);
+  const [nowTs, setNowTs] = useState(() => new Date());
+
+  // Tick once a minute so the prayer countdown stays fresh without thrashing renders.
+  useEffect(() => {
+    const id = setInterval(() => setNowTs(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const nextP = nextPrayer(nowTs);
+  const gap = formatGap(nextP.at, nowTs);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,12 +257,18 @@ export default function HomePage() {
 
         {/* Next prayer breathing */}
         <section className="mt-5 px-5">
-          <div className="glass block rounded-3xl p-5 shadow-soft" data-testid="next-prayer-card">
+          <Link
+            to="/breathe"
+            data-testid="next-prayer-card"
+            className="glass block rounded-3xl p-5 shadow-soft tap-scale"
+          >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-deep/45">Next moment</p>
-                <p className="mt-1 font-display text-xl text-deep">Maghrib</p>
-                <p className="text-xs text-deep/55">soft reminder in 2h 14m</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-deep/45">
+                  {nextP.isTomorrow ? "Tomorrow's first light" : "Next moment"}
+                </p>
+                <p className="mt-1 font-display text-xl text-deep" data-testid="next-prayer-label">{nextP.label}</p>
+                <p className="text-xs text-deep/55">soft reminder in {gap}</p>
                 <p className="mt-2 text-[11px] font-medium text-deep/75">Tap to breathe with the ring →</p>
               </div>
               <div className="relative h-16 w-16">
@@ -260,7 +276,7 @@ export default function HomePage() {
                 <div className="bg-gold-gradient absolute inset-2 rounded-full opacity-90" />
               </div>
             </div>
-          </div>
+          </Link>
         </section>
 
         {/* Circles strip */}

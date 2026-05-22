@@ -27,6 +27,19 @@ The experience should feel:
 - **Family / parent** — uses family circles, parenting resources (future)
 
 ## Implemented in this MVP (Phase 1–3 + smart engagement — May 2026)
+## Feature — Breathe with the ring (Feb, 2026)
+- The Home "Next moment" card is now a real entry point: it shows the **dynamically computed next prayer** (Fajr / Dhuhr / Asr / Maghrib / Isha) and a live countdown.
+- Tapping the card opens a new `/breathe` page (`/app/frontend/src/pages/Breathe.jsx`) — a calm full-screen breathing companion with:
+  - Prayer name + "Tomorrow's first light / Next moment" header + live time-until-prayer.
+  - A large emerald orb + gold halo that scales with a 4·4·4·4 **box-breathing** cycle (Inhale / Hold / Exhale / Rest), 16 s per cycle.
+  - Phase label + per-phase countdown in the centre of the ring.
+  - Cycles counter and a Pause/Resume toggle.
+  - Back arrow to Home.
+- Helpers shared via `/app/frontend/src/lib/prayerTimes.js` (`PRAYERS`, `nextPrayer`, `formatGap`). Default 5-prayer schedule matches the backend seed; future enhancement = per-city lookup.
+- Route is guest-friendly (no auth required) — sits alongside `/`, `/noor`, `/dua`, `/jamatkhana`.
+- Verified via Playwright: card → `/breathe`, prayer name resolves, pause/resume works, back returns to Home.
+
+
 ## Latest fix — Sign-in page redirect bug (Feb, 2026)
 - **Symptom (user-reported)**: From `/circles` and `/profile`, tapping the "Sign in" CTA on the gated `LoginRequired` screen landed back on Home instead of `/login`.
 - **Root cause**: `auth.js` silently bootstraps every visitor with a guest session via `/api/auth/guest`. `Login.jsx` had a `useEffect` that redirected away from `/login` whenever `user` was truthy — which was always true once the guest session was created.

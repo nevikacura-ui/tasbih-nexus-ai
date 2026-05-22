@@ -37,6 +37,7 @@ import YearMosaicPage from "./pages/YearMosaic";
 import GinanPage from "./pages/Ginan";
 import DuaPage from "./pages/Dua";
 import FamilyPage from "./pages/Family";
+import BreathePage from "./pages/Breathe";
 
 function Protected({ children }) {
   return children;
@@ -76,6 +77,7 @@ function Router() {
       <Route path="/ramadan" element={<RamadanPage />} />
       <Route path="/jamatkhana" element={<JamatkhanaPage />} />
       <Route path="/calendar" element={<CalendarPage />} />
+      <Route path="/breathe" element={<BreathePage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
 
