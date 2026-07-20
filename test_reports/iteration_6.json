@@ -1,0 +1,34 @@
+{
+  "summary": "Regression sweep after Railway build-config additions (railway.json + env-driven CORS + guarded frontend-serving block in /backend/server.py). Verified NO regression on the Emergent preview: the `if _frontend_build_dir.exists()` guard correctly skips the frontend-serving block (no /app/frontend/build directory here), CORS falls back to '*' as designed since CORS_ORIGINS is unset, and backend boots cleanly (supervisor logs healthy — 'Application startup complete', prewarm + full-dua cache load OK, geocoder idle). All 6 targeted backend endpoints pass. Frontend smoke test PASSES on the mobile viewport: Home renders with the 'next-prayer-card' testid, clicking it routes to /breathe with a live box-breathing ring (Dhuhr in 4h 09m, INHALE 2), Noor page shows the '0 / 3 reflections today' chip above the input bar (data-testid nav-noor accessible), and /login stays at /login for guest users (no redirect regression). No new bugs discovered.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_5.json (previous audit — regression baseline)",
+    "/app/backend/tests/test_audit_regression.py (unchanged; still current)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py lines 3968-4012: The frontend-serving block is correctly guarded by `if _frontend_build_dir.exists()`. Local imports of _Path/_Request/_StaticFiles/_FileResponse/_RedirectResponse happen at module import time (outside the if), which is fine — they add a few hundred bytes of memory but are inert. Consider moving them inside the `if` for cleanliness, non-blocking.",
+    "CORS parsing (lines 118-121): `os.environ['CORS_ORIGINS'].split(',')` is safe because it's only reached inside the ternary's truthy branch after `os.environ.get('CORS_ORIGINS')` returned a non-empty value. Edge case: if CORS_ORIGINS is set to only whitespace-and-commas (e.g. ' , , '), the list comprehension yields `[]` and FastAPI/starlette CORSMiddleware will silently allow no origins. Consider falling back to ['*'] if the parsed list is empty. Non-blocking for launch.",
+    "railway.json (repo root): Forces `NIXPACKS` builder + nixpacks.toml — good. On Emergent preview this file is inert (only Railway reads it). No effect on the running FastAPI process.",
+    "server.py is now 4013 lines (up from 3737 last iteration due to +65 lines of frontend-serving block). Still flagged for maintainability; consider extracting the SPA-serving block into a small `spa_serving.py` module that main imports conditionally. Non-blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (6/6 targeted endpoints)",
+    "frontend": "100% (Home + prayer-card→/breathe + Noor chip + /login no-redirect)"
+  },
+  "test_credentials": "Guest session minted live via POST /api/auth/guest (returned session_token guest_20648... in test run). No member creds needed for this regression pass.",
+  "seed_data_creation": "None. Guest sessions are ephemeral. No production data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Railway build config additions (railway.json + guarded SPA block + env-driven CORS) are a pure NO-OP on the Emergent preview because /app/frontend/build does not exist here. The guard `_frontend_build_dir.exists()` prevents any /-catchall route from being registered, so API routing is unaffected. If a future iteration adds a build step to the preview, this catch-all will start serving index.html for unknown routes and could mask 404s from typos in API paths — keep the `/api/` and `/ws/` early-return in `_serve_react_spa` intact. Detailed endpoint proof: GET /api/jamatkhanas?country=United%20States → 38 JKs, 19 with TX addresses, jk_027 'Ismaili Jamatkhana - Spring' at lat=30.115272, lng=-95.543292. POST /api/auth/guest → session_token OK. GET /api/noor/usage → {used_today:0, daily_limit:3, remaining_today:3}. GET /api/full-dua/timeline?voice=male → 161 segments, 339600 ms, first segment r1_01_bismillah (0-2455ms). GET /api/jamatkhanas/nearby?lat=30.1153&lng=-95.5433&limit=1 → jk_027 with distance_km=0.0. Home testids present: next-prayer-card, next-prayer-label, noor-of-day, reflect-now-cta, bottom-nav, nav-{home,noor,circles,dua,profile}.",
+  "rca of the issue": "N/A — this iteration was a regression check for Railway deploy-config changes. The reported Railway bug (Railpack 0.31.1 ignoring nixpacks.toml) can only be validated on Railway itself. On Emergent preview: guard `if _frontend_build_dir.exists()` returns False (no build dir) → SPA-serving block is completely skipped → no regression. CORS_ORIGINS env var is unset in preview → falls through to `['*']` → identical behavior to pre-change. Both config additions are correctly no-ops in this environment."
+}

@@ -15,6 +15,17 @@ Copy every line from `/railway.env.example` into Railway → Variables → **Raw
 
 Do not paste an `PORT=` line; Railway supplies `$PORT` automatically.
 
+> **⚠️ If Railway shows `Railpack could not determine how to build the app`**
+> Railway's newer default builder is Railpack, which ignores `nixpacks.toml`.
+> This repo ships a `/railway.json` that forces the classic Nixpacks builder — make sure it's committed and present at repo root. You can also flip it in the dashboard: **Settings → Build → Builder → Nixpacks**.
+
+> **⚠️ Do not commit `.env`**
+> Railway's build log shows `.env` uploaded from your repo — that leaks every secret. It's already in `.gitignore` here; if it slipped into git history, run:
+> ```bash
+> git rm --cached .env && git commit -m "stop tracking .env"
+> ```
+> and rotate any keys that were exposed.
+
 ## 4. First deploy
 Watch Railway logs for:
 ```
