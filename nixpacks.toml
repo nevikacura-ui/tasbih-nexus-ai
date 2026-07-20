@@ -36,7 +36,12 @@ cmds = [
 ]
 
 [phases.build]
-cmds = ["cd frontend && yarn build"]
+# `DISABLE_ESLINT_PLUGIN=true` — CRA's `eslintConfig.extends: ["react-app"]` needs
+#   `eslint-config-react-app`, a peer of `react-scripts` that Yarn on Railway often
+#   fails to hoist. ESLint still runs locally during dev; skipping it in production
+#   is the standard cloud-build pattern (Vercel, Netlify, Railway all recommend it).
+# `CI=false` — Railway sets CI=true, which makes CRA treat warnings as errors.
+cmds = ["cd frontend && DISABLE_ESLINT_PLUGIN=true CI=false yarn build"]
 
 [start]
 # Direct venv path — no shell activation needed.

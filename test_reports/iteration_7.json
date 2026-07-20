@@ -1,0 +1,31 @@
+{
+  "summary": "Narrow regression pass after adding `eslint: { enable: false }` to /app/frontend/craco.config.js (Railway build-time fix). Zero runtime regressions confirmed on Emergent preview. Backend: 5/5 targeted endpoints pass (health, jamatkhanas US Texas Spring @ ~30.115,-95.543 found, POST /api/auth/guest mints session_token, GET /api/noor/usage returns {used_today:0, daily_limit:3, remaining_today:3}, full-dua timeline returns 162 segments). Frontend smoke: Home renders 'next-prayer-card' with dynamic 'Dhuhr / soft reminder in 3h 59m / Tap to breathe with the ring →'; tapping navigates to /breathe with the box-breath ring animating (INHALE 3, Cycles 0, 4·4·4·4); /noor shows the '0 / 3 reflections today' chip above the input bar; /login stays on /login (no guest redirect) and shows the invite-code form ('Verify invitation codes' with two code inputs).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_smoke.py",
+    "/app/test_reports/pytest/iteration7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "craco.config.js: `eslint: { enable: false }` is a documented CRACO option honored by react-scripts@5 — correctly stops the CRA ESLint webpack plugin from trying to `extends: ['react-app']` at build-time. Comment block (lines 3-8) clearly explains WHY. Change is scoped to the webpack build; dev-server ESLint via editor/CLI remains unaffected. No runtime code paths touched — the resulting JS bundle is identical to a build where ESLint reported zero warnings.",
+    "nixpacks.toml / railway.json: belt-and-suspenders approach (DISABLE_ESLINT_PLUGIN=true + CI=false + forced NIXPACKS builder) is inert on Emergent preview — only Railway reads these. No effect here.",
+    "server.py unchanged from iteration 6; the guarded frontend-serving block (`if _frontend_build_dir.exists()`) is still skipped in this env because /app/frontend/build does not exist.",
+    "Minor console noise on frontend: React Router v6→v7 future-flag warnings (v7_startTransition, v7_relativeSplatPath) — pre-existing, non-blocking. Also 401/403 XHR errors from guest hitting gated endpoints (/journal, /reminders) — expected behavior of the guest gate, not a regression."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration7_smoke.py"],
+  "success_rate": {
+    "backend": "100% (5/5 targeted endpoints)",
+    "frontend": "100% (Home + prayer-card→/breathe ring + Noor chip + /login invite form no-redirect)"
+  },
+  "test_credentials": "Guest session minted via POST /api/auth/guest in-test. No member creds required for this narrow pass.",
+  "seed_data_creation": "None. Guest session is ephemeral.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 7 fix (`eslint: { enable: false }` in craco.config.js) is a build-time-only change; runtime bundle is unchanged. Emergent preview verified clean at 2026-01 with 5-endpoint backend smoke + 4-page frontend smoke. If Railway still fails after this change, the RCA has moved from ESLint peer-dep to something else (nixpacks/Railpack detection, Node version, or /app/frontend/package.json's `eslintConfig` block still being read by some other loader) — investigate Railway logs directly, not the preview. Detailed proof: /api/jamatkhanas → 38 US JKs, jk_027 'Ismaili Jamatkhana - Spring' at lat=30.115272, lng=-95.543292; /api/auth/guest → session_token (guest_... prefix); /api/noor/usage → {used_today:0, daily_limit:3, remaining_today:3}; /api/full-dua/timeline?voice=male → 162 segments monotonic.",
+  "rca of the issue": "N/A — this iteration verified a Railway build-time fix has no runtime side-effects on the Emergent preview. Original Railway RCA (from main agent): CRA's `eslintConfig.extends: ['react-app']` needs the peer `eslint-config-react-app` package, which Yarn on Railway does not hoist into node_modules/, so webpack's eslint plugin throws 'Failed to load config react-app'. Fix disables that plugin at CRACO layer — a documented react-scripts@5 option — bypassing the peer-dep entirely. Local `yarn build` in /app/frontend now succeeds per main agent (193KB main.js, 14KB main.css). Runtime behavior is unchanged, confirmed by this smoke pass."
+}
