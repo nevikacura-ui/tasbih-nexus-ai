@@ -1,0 +1,43 @@
+# ============================================
+# Railway deployment configuration for Tasbih.ai
+# React + FastAPI + MongoDB Atlas
+# ============================================
+#
+# Nix   → Node.js 22 only (frontend build).
+# apt   → Python 3 + pip + SSL libs + ca-certificates (Atlas TLS).
+# Venv  → /opt/venv (no shell activation needed at start-time).
+#
+# The single Railway service builds the React app, then boots a FastAPI
+# process that serves BOTH the API (/api/*) and the React SPA (everything else).
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+nixpkgsArchive = "ba913eda2df8eb72147259189d55932012df6301"
+
+# ca-certificates is REQUIRED for MongoDB Atlas SSL handshake.
+aptPkgs = [
+    "python3-pip",
+    "python3-venv",
+    "python3-dev",
+    "build-essential",
+    "libssl-dev",
+    "libffi-dev",
+    "ca-certificates"
+]
+
+[phases.install]
+cmds = [
+    # Frontend deps via corepack (yarn ships with Node 22).
+    "corepack enable && corepack prepare yarn@stable --activate && cd frontend && yarn install",
+
+    # Backend deps — emergentintegrations lives on a custom index so we pass it here.
+    # If you later drop emergentintegrations from requirements.txt, this flag is harmless.
+    "python3 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip && /opt/venv/bin/pip install -r backend/requirements.txt --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/"
+]
+
+[phases.build]
+cmds = ["cd frontend && yarn build"]
+
+[start]
+# Direct venv path — no shell activation needed.
+cmd = "/opt/venv/bin/uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir /app/backend"

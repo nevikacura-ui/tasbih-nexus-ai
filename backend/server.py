@@ -112,7 +112,13 @@ api = APIRouter(prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # CORS_ORIGINS (comma-separated) is honoured on Railway / custom-domain deploys.
+    # Falls back to "*" for Emergent preview & local dev (guest tokens live in Authorization,
+    # never in cookies, so `*` is safe here even with `allow_credentials=True`).
+    allow_origins=(
+        [o.strip() for o in os.environ["CORS_ORIGINS"].split(",") if o.strip()]
+        if os.environ.get("CORS_ORIGINS") else ["*"]
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -3949,3 +3955,58 @@ async def _geocode_pending_jks():
 
 
 app.include_router(api)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Single-service frontend serving (Railway / any single-container host).
+# ────────────────────────────────────────────────────────────────────────────
+# When this process is deployed as ONE service that must also serve the React
+# SPA (e.g. Railway), we detect `frontend/build/` next to the backend and mount
+# it here. On Emergent preview the frontend runs on its own port 3000, so
+# `frontend/build/` does NOT exist there — this whole block is skipped and
+# behaviour is unchanged.
+from pathlib import Path as _Path  # noqa: E402
+from fastapi import Request as _Request  # noqa: E402
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+from fastapi.responses import FileResponse as _FileResponse, RedirectResponse as _RedirectResponse  # noqa: E402
+
+_frontend_build_dir = _Path(__file__).parent.parent / "frontend" / "build"
+
+if _frontend_build_dir.exists():
+    logger.info(f"Serving React frontend from {_frontend_build_dir}")
+
+    # Non-www → www redirect for the primary domain (Railway custom-domain SSL is issued for www).
+    @app.middleware("http")
+    async def _redirect_to_www(request: _Request, call_next):
+        host = request.headers.get("host", "")
+        if host == "tasbih.ai":
+            new_url = str(request.url).replace("://tasbih.ai", "://www.tasbih.ai", 1)
+            return _RedirectResponse(url=new_url, status_code=301)
+        return await call_next(request)
+
+    # CRA output → /static/js, /static/css, etc.
+    _static_dir = _frontend_build_dir / "static"
+    if _static_dir.exists():
+        app.mount("/static", _StaticFiles(directory=str(_static_dir)), name="frontend_static")
+
+    # Root
+    @app.get("/", include_in_schema=False)
+    async def _serve_root():
+        return _FileResponse(_frontend_build_dir / "index.html")
+
+    # Public files at repo root of the build (favicon, manifest, robots, sw.js, etc.).
+    # Registered BEFORE the catch-all so real files win.
+    for _name in ("favicon.ico", "manifest.json", "robots.txt", "asset-manifest.json", "sw.js"):
+        _p = _frontend_build_dir / _name
+        if _p.exists():
+            @app.get(f"/{_name}", include_in_schema=False)  # noqa: E306
+            async def _serve_public(_name=_name):
+                return _FileResponse(_frontend_build_dir / _name)
+
+    # Catch-all → React Router. Never hijacks /api/*.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def _serve_react_spa(full_path: str):
+        if full_path.startswith("api/") or full_path.startswith("ws/"):
+            from fastapi import HTTPException as _HTTPException  # local import keeps top imports clean
+            raise _HTTPException(status_code=404, detail="Not Found")
+        return _FileResponse(_frontend_build_dir / "index.html")
